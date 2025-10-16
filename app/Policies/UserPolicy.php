@@ -3,12 +3,12 @@
 namespace App\Policies;
 
 use App\Models\User;
-use App\Policies\Traits\SuperAdminPolicy;
+
 use Illuminate\Auth\Access\HandlesAuthorization;
 
 class UserPolicy
 {
-    use HandlesAuthorization, SuperAdminPolicy;
+    use HandlesAuthorization;
 
     /**
      * Determine whether the user can view any models.

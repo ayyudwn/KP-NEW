@@ -65,7 +65,7 @@ class VGAResource extends Resource
                     ->required(),
 
                 Textarea::make('spesifikasi')
-                    ->label('Spesifikasi')
+                    ->label('Spesifikasi')  
                     ->rows(4)
                     ->maxLength(500),
 

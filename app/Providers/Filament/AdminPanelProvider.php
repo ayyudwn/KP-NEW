@@ -9,6 +9,9 @@ use App\Filament\Resources\BarangMasukResource;
 use App\Filament\Resources\PCInventoryResource;
 use App\Filament\Resources\NonPCInventoryResource;
 use App\Filament\Resources\SoftwareInventoryResource;
+use App\Filament\Resources\ProdiResource;
+use App\Filament\Resources\LecturerResource;
+use App\Filament\Resources\CourseResource;
 use App\Filament\Widgets\CalendarWidget;
 use App\Filament\Widgets\KalenderAkademikWidget;
 use App\Filament\Widgets\StatsOverviewWidget;
@@ -94,6 +97,39 @@ class AdminPanelProvider extends PanelProvider
                             ->url(fn() => Dashboard::getUrl())
                             ->isActiveWhen(fn() => request()->routeIs('filament.admin.pages.dashboard')),
                     ]);
+
+                // PENJADWALAN - tampilkan untuk semua yang memiliki izin terkait penjadwalan
+                $penjadwalanItems = [];
+
+                // Program Studi
+                if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'prodi')) {
+                    $penjadwalanItems[] = NavigationItem::make('Program Studi')
+                        ->icon('heroicon-o-academic-cap')
+                        ->url(\App\Filament\Resources\ProdiResource::getUrl())
+                        ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\ProdiResource::getRouteBaseName() . '.*'));
+                }
+
+                // Dosen
+                if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'lecturer')) {
+                    $penjadwalanItems[] = NavigationItem::make('Dosen')
+                        ->icon('heroicon-o-user-group')
+                        ->url(\App\Filament\Resources\LecturerResource::getUrl())
+                        ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\LecturerResource::getRouteBaseName() . '.*'));
+                }
+
+                // Mata Kuliah
+                if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'course')) {
+                    $penjadwalanItems[] = NavigationItem::make('Mata Kuliah')
+                        ->icon('heroicon-o-book-open')
+                        ->url(\App\Filament\Resources\CourseResource::getUrl())
+                        ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\CourseResource::getRouteBaseName() . '.*'));
+                }
+
+                // Tambahkan grup PENJADWALAN jika ada item di dalamnya
+                if (count($penjadwalanItems) > 0) {
+                    $navigationGroups[] = NavigationGroup::make('Penjadwalan')
+                        ->items($penjadwalanItems);
+                }
 
                 // Pelaporan PTPP - tampilkan untuk semua yang memiliki izin terkait PTPP
                 if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'lapor::ptpp')) {
