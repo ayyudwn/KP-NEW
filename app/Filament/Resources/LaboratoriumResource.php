@@ -36,39 +36,87 @@ class LaboratoriumResource extends Resource
     {
         return $form
             ->schema([
-                Select::make('kategori_id')
-                    ->label('Kategori')
-                    ->relationship('kategori', 'nama_kategori')
-                    ->required()
-                    ->preload() //agar option select bisa muncul
-                    ->searchable()
-                    ->placeholder('Select kategori'),
+                Forms\Components\Section::make('Informasi Dasar')
+                    ->schema([
+                        Select::make('kategori_id')
+                            ->label('Kategori')
+                            ->relationship('kategori', 'nama_kategori')
+                            ->required()
+                            ->preload()
+                            ->searchable()
+                            ->placeholder('Select kategori'),
 
-                TextInput::make('ruang')
-                    ->label('Ruang Laboratorium')
-                    ->required()
-                    ->maxLength(255),
+                        TextInput::make('ruang')
+                            ->label('Ruang Laboratorium')
+                            ->required()
+                            ->maxLength(255),
 
-                TextInput::make('kapasitas')
-                    ->label('Kapasitas Ruangan')
-                    ->numeric()
-                    ->minValue(1)
-                    ->required(),
-                TextInput::make('pc_siap')
-                    ->label('PC Siap Pakai')
-                    ->numeric()
-                    ->minValue(1)
-                    ->required(),
-                TextInput::make('pc_backup')
-                    ->label('PC Backup')
-                    ->numeric()
-                    ->minValue(1)
-                    ->required(),
+                        TextInput::make('kapasitas')
+                            ->label('Kapasitas Ruangan')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required(),
 
-                Textarea::make('keterangan')
-                    ->label('Keterangan')
-                    ->rows(4)
-                    ->maxLength(500),
+                        TextInput::make('pc_siap')
+                            ->label('PC Siap Pakai')
+                            ->numeric()
+                            ->minValue(0)
+                            ->required()
+                            ->helperText('Jumlah PC yang siap untuk praktikum'),
+
+                        TextInput::make('pc_backup')
+                            ->label('PC Backup')
+                            ->numeric()
+                            ->minValue(0)
+                            ->required(),
+
+                        Textarea::make('keterangan')
+                            ->label('Keterangan')
+                            ->rows(3)
+                            ->maxLength(500),
+                    ])
+                    ->columns(2),
+
+                Forms\Components\Section::make('Pengaturan Penjadwalan')
+                    ->description('Pengaturan untuk sistem penjadwalan otomatis')
+                    ->schema([
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Aktif untuk Penjadwalan')
+                            ->default(true)
+                            ->helperText('Nonaktifkan jika lab sedang dalam perbaikan'),
+
+                        Forms\Components\TimePicker::make('operating_start')
+                            ->label('Jam Operasional Mulai')
+                            ->default('07:00')
+                            ->required(),
+
+                        Forms\Components\TimePicker::make('operating_end')
+                            ->label('Jam Operasional Selesai')
+                            ->default('21:00')
+                            ->required(),
+                    ])
+                    ->columns(3),
+
+                Forms\Components\Section::make('Software & Prioritas')
+                    ->description('Pengaturan software dan prioritas program studi')
+                    ->schema([
+                        Forms\Components\Select::make('software')
+                            ->label('Software Terinstal')
+                            ->relationship('software', 'nama')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->helperText('Pilih software yang terinstal di lab ini'),
+
+                        Forms\Components\Select::make('priorityProdis')
+                            ->label('Prioritas Program Studi')
+                            ->relationship('priorityProdis', 'name')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->helperText('Program studi yang diprioritaskan untuk lab ini'),
+                    ])
+                    ->columns(2),
             ]);
     }
 

@@ -126,7 +126,23 @@ class AdminPanelProvider extends PanelProvider
                         ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\CourseResource::getRouteBaseName() . '.*'));
                 }
 
-                // Timetable Visual (satu-satunya cara mengelola jadwal)
+                // Penjadwalan Otomatis (Schedule Wizard) - NEW!
+                if ($user->hasRole('super_admin') || $user->can('page_ScheduleWizard')) {
+                    $penjadwalanItems[] = NavigationItem::make('Penjadwalan Otomatis')
+                        ->icon('heroicon-o-sparkles')
+                        ->url('/admin/schedule-wizard')
+                        ->isActiveWhen(fn() => request()->is('admin/schedule-wizard*'));
+                }
+
+                // Jadwal Kuliah (ScheduleResource) - untuk melihat/edit manual
+                if ($user->hasRole('super_admin') || $user->can('view_any_schedule')) {
+                    $penjadwalanItems[] = NavigationItem::make('Jadwal Kuliah')
+                        ->icon('heroicon-o-calendar-days')
+                        ->url(\App\Filament\Resources\ScheduleResource::getUrl())
+                        ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\ScheduleResource::getRouteBaseName() . '.*'));
+                }
+
+                // Timetable Visual (visualisasi jadwal)
                 if ($user->hasRole('super_admin') || $user->can('page_ScheduleTimetable')) {
                     $penjadwalanItems[] = NavigationItem::make('Timetable Visual')
                         ->icon('heroicon-o-table-cells')
@@ -182,7 +198,7 @@ class AdminPanelProvider extends PanelProvider
                 if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'role')) {
                     $masterDataItems[] = NavigationItem::make('Permissions')
                         ->icon('heroicon-o-shield-check')
-                        ->url(fn () => route('filament.admin.resources.shield.roles.index'))
+                        ->url(fn() => route('filament.admin.resources.shield.roles.index'))
                         ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.shield.roles.*'));
                 }
 

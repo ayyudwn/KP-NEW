@@ -31,56 +31,88 @@ class CourseResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('name')
-                    ->label('Nama Mata Kuliah')
-                    ->required()
-                    ->maxLength(255),
+                Forms\Components\Section::make('Informasi Dasar')
+                    ->schema([
+                        Forms\Components\TextInput::make('code')
+                            ->label('Kode Mata Kuliah')
+                            ->maxLength(20)
+                            ->unique(ignoreRecord: true)
+                            ->placeholder('TI101')
+                            ->helperText('Kode unik untuk mata kuliah'),
 
-                Forms\Components\TextInput::make('sks')
-                    ->label('SKS')
-                    ->required()
-                    ->numeric()
-                    ->minValue(1)
-                    ->maxValue(6)
-                    ->helperText('Jumlah Sistem Kredit Semester (1-6)'),
-
-                Forms\Components\Select::make('prodi_id')
-                    ->label('Program Studi')
-                    ->relationship('prodi', 'name')
-                    ->searchable()
-                    ->preload()
-                    ->createOptionForm([
                         Forms\Components\TextInput::make('name')
-                            ->label('Nama Program Studi')
+                            ->label('Nama Mata Kuliah')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\TextInput::make('code')
-                            ->label('Kode Prodi')
-                            ->maxLength(10)
-                            ->helperText('Opsional: Kode singkat untuk program studi'),
-                    ])
-                    ->helperText('Pilih program studi atau buat baru'),
 
-                Forms\Components\Select::make('software_requirements')
-                    ->label('Software yang Dibutuhkan')
-                    ->options(function () {
-                        // Ambil software dari inventaris yang ada, bukan dari software_details
-                        return \App\Models\Inventory::where('inventoriable_type', 'App\Models\SoftwareDetail')
-                            ->whereNotNull('nama_barang')
-                            ->where('nama_barang', '!=', '')
-                            ->with('laboratorium')
-                            ->get()
-                            ->mapWithKeys(function ($inventory) {
-                                $labName = $inventory->laboratorium?->ruang ?? 'Lab tidak diketahui';
-                                return [$inventory->nama_barang => "{$inventory->nama_barang} (Lab: {$labName})"];
+                        Forms\Components\TextInput::make('sks')
+                            ->label('SKS')
+                            ->required()
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(6)
+                            ->helperText('Jumlah SKS (1-6). Menentukan durasi jadwal.'),
+
+                        Forms\Components\TextInput::make('semester')
+                            ->label('Semester')
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(8)
+                            ->placeholder('1-8')
+                            ->helperText('Semester dimana matkul diajarkan'),
+
+                        Forms\Components\Select::make('prodi_id')
+                            ->label('Program Studi')
+                            ->relationship('prodi', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('name')
+                                    ->label('Nama Program Studi')
+                                    ->required()
+                                    ->maxLength(255),
+                                Forms\Components\TextInput::make('code')
+                                    ->label('Kode Prodi')
+                                    ->maxLength(10)
+                                    ->helperText('Opsional: Kode singkat untuk program studi'),
+                            ])
+                            ->helperText('Pilih program studi atau buat baru'),
+
+                        Forms\Components\TextInput::make('jumlah_mahasiswa')
+                            ->label('Jumlah Mahasiswa')
+                            ->numeric()
+                            ->minValue(0)
+                            ->default(0)
+                            ->helperText('Jumlah mahasiswa yang mengambil matkul ini. Digunakan untuk filter kapasitas lab.'),
+                    ])
+                    ->columns(2),
+
+                Forms\Components\Section::make('Kebutuhan Software')
+                    ->description('Software yang diperlukan untuk mata kuliah ini')
+                    ->schema([
+                        Forms\Components\Select::make('software')
+                            ->label('Software yang Dibutuhkan')
+                            ->relationship('software', 'nama')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->helperText('Pilih software yang dibutuhkan. Lab yang tidak memiliki software ini tidak akan muncul di pilihan penjadwalan.'),
+
+                        // Legacy field untuk backward compatibility
+                        Forms\Components\Select::make('software_requirements')
+                            ->label('Software Tambahan (Legacy)')
+                            ->options(function () {
+                                return \App\Models\Inventory::where('inventoriable_type', 'App\Models\SoftwareDetail')
+                                    ->whereNotNull('nama_barang')
+                                    ->where('nama_barang', '!=', '')
+                                    ->pluck('nama_barang', 'nama_barang')
+                                    ->unique()
+                                    ->toArray();
                             })
-                            ->unique()
-                            ->toArray();
-                    })
-                    ->multiple()
-                    ->searchable()
-                    ->helperText('Pilih software yang dibutuhkan. Hanya software yang tersedia di inventaris lab yang ditampilkan.')
-                    ->optionsLimit(50),
+                            ->multiple()
+                            ->searchable()
+                            ->helperText('Field legacy - gunakan "Software yang Dibutuhkan" untuk penjadwalan otomatis'),
+                    ]),
             ]);
     }
 
@@ -156,7 +188,7 @@ class CourseResource extends Resource
                     ->searchable()
                     ->multiple()
                     ->query(function (Builder $query, array $data) {
-                        if (! empty($data['values'])) {
+                        if (!empty($data['values'])) {
                             $query->where(function ($query) use ($data) {
                                 foreach ($data['values'] as $software) {
                                     $query->orWhereJsonContains('software_requirements', $software);
