@@ -23,6 +23,8 @@ class EditSoftwareInventory extends EditRecord
         // Load data dari relasi inventoriable ke dalam form details
         if ($this->record->inventoriable) {
             $data['details'] = $this->record->inventoriable->toArray();
+            // Set software_detail_id for the select dropdown
+            $data['software_detail_id'] = $this->record->inventoriable_id;
         }
 
         return $data;
@@ -30,12 +32,24 @@ class EditSoftwareInventory extends EditRecord
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
+        $softwareDetailId = $data['software_detail_id'] ?? null;
         $detailsData = $data['details'] ?? [];
         unset($data['details']);
+        unset($data['software_detail_id']);
 
-        // Update data pada tabel software_details
+        // If software selection changed, update the inventoriable_id
+        if ($softwareDetailId && $softwareDetailId != $record->inventoriable_id) {
+            $data['inventoriable_id'] = $softwareDetailId;
+            $data['inventoriable_type'] = \App\Models\SoftwareDetail::class;
+        }
+
+        // Update version info on the software detail if provided
         if ($record->inventoriable && !empty($detailsData)) {
-            $record->inventoriable->update($detailsData);
+            $record->inventoriable->update([
+                'versi' => $detailsData['jenis_lisensi'] ?? $record->inventoriable->versi,
+                'nomor_lisensi' => $detailsData['nomor_lisensi'] ?? $record->inventoriable->nomor_lisensi,
+                'tanggal_kadaluarsa' => $detailsData['tanggal_kadaluarsa'] ?? $record->inventoriable->tanggal_kadaluarsa,
+            ]);
         }
 
         // Update data pada tabel inventories

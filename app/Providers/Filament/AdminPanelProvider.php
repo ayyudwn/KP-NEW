@@ -194,6 +194,14 @@ class AdminPanelProvider extends PanelProvider
                         ->isActiveWhen(fn() => request()->routeIs(\App\Filament\Resources\KlasifikasiLabResource::getRouteBaseName() . '.*'));
                 }
 
+                // Daftar Software
+                if ($user->hasRole('super_admin') || $user->can('view_any_software')) {
+                    $masterDataItems[] = NavigationItem::make('Daftar Software')
+                        ->icon('heroicon-o-puzzle-piece')
+                        ->url(fn() => '/admin/software')
+                        ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.software.*'));
+                }
+
                 // Permissions
                 if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'role')) {
                     $masterDataItems[] = NavigationItem::make('Permissions')

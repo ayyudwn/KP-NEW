@@ -72,11 +72,13 @@ class Laboratorium extends Model
 
     /**
      * Relasi many-to-many ke SoftwareDetail
-     * Software yang terinstal di lab ini
+     * Software yang terinstal di lab ini dengan versi masing-masing
      */
     public function software(): BelongsToMany
     {
-        return $this->belongsToMany(SoftwareDetail::class, 'lab_software');
+        return $this->belongsToMany(SoftwareDetail::class, 'lab_software')
+            ->withPivot('version')
+            ->withTimestamps();
     }
 
     /**

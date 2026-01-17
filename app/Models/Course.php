@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class Course extends Model
 {
@@ -25,6 +26,30 @@ class Course extends Model
     protected $casts = [
         'software_requirements' => 'array'
     ];
+
+    protected $appends = ['code_number'];
+
+    /**
+     * Get the code_number (numeric part of course code)
+     * Contoh: "A11.64504" -> "64504"
+     */
+    protected function codeNumber(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                if (!$this->code) {
+                    return null;
+                }
+                // Parse angka setelah titik, misal "A11.64504" -> "64504"
+                if (str_contains($this->code, '.')) {
+                    $parts = explode('.', $this->code);
+                    return end($parts);
+                }
+                // Jika tidak ada titik, return seluruh code
+                return $this->code;
+            }
+        );
+    }
 
     /**
      * Relasi ke model Prodi

@@ -43,7 +43,13 @@ class ScheduleResource extends Resource
                         Forms\Components\Select::make('course_id')
                             ->label('Mata Kuliah')
                             ->relationship('course', 'name')
-                            ->getOptionLabelFromRecordUsing(fn(Course $record) => $record->full_label)
+                            ->getOptionLabelFromRecordUsing(
+                                fn(Course $record) =>
+                                ($record->code ? "[{$record->code}] " : '') .
+                                $record->name .
+                                ($record->prodi ? " ({$record->prodi->name})" : '') .
+                                " - {$record->sks} SKS"
+                            )
                             ->searchable()
                             ->preload()
                             ->required()
@@ -52,6 +58,8 @@ class ScheduleResource extends Resource
                                 // Reset dependent fields when course changes
                                 $set('laboratorium_id', null);
                                 $set('time_slot_id', null);
+                                $set('kelompok_code', null);
+                                $set('kelompok', null);
                             })
                             ->helperText(function (Get $get) {
                                 $courseId = $get('course_id');
@@ -67,10 +75,6 @@ class ScheduleResource extends Resource
                                 $info = [];
                                 $info[] = "SKS: {$course->sks}";
 
-                                if ($course->jumlah_mahasiswa > 0) {
-                                    $info[] = "Mahasiswa: {$course->jumlah_mahasiswa}";
-                                }
-
                                 if ($course->prodi) {
                                     $info[] = "Prodi: {$course->prodi->name}";
                                 }
@@ -83,12 +87,6 @@ class ScheduleResource extends Resource
 
                                 return implode(' | ', $info);
                             }),
-
-                        Forms\Components\TextInput::make('kelompok')
-                            ->label('Kelompok/Kelas')
-                            ->placeholder('A, B, C, atau kosongkan')
-                            ->maxLength(50)
-                            ->helperText('Opsional: untuk kelas paralel'),
 
                         Forms\Components\Select::make('lecturer_id')
                             ->label('Dosen Pengampu')
@@ -103,8 +101,61 @@ class ScheduleResource extends Resource
                                     ->maxLength(255),
                             ])
                             ->helperText('Opsional: dapat ditentukan nanti'),
+
+                        Forms\Components\TextInput::make('kelompok_code')
+                            ->label('Kode Kelompok/Kelas')
+                            ->placeholder('0001')
+                            ->maxLength(20)
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                // Generate kelompok lengkap dari prodi code + input
+                                $courseId = $get('course_id');
+                                if ($courseId && $state) {
+                                    $course = Course::with('prodi')->find($courseId);
+                                    if ($course && $course->prodi && $course->prodi->code) {
+                                        $set('kelompok', $course->prodi->code . '.' . $state);
+                                    } else {
+                                        $set('kelompok', $state);
+                                    }
+                                } else {
+                                    $set('kelompok', $state);
+                                }
+                            })
+                            ->helperText(function (Get $get) {
+                                $courseId = $get('course_id');
+                                if ($courseId) {
+                                    $course = Course::with('prodi')->find($courseId);
+                                    if ($course && $course->prodi && $course->prodi->code) {
+                                        return "Kode prodi: {$course->prodi->code}";
+                                    }
+                                }
+                                return 'Input kode kelompok (misal: 0001)';
+                            }),
+
+                        Forms\Components\TextInput::make('kelompok')
+                            ->label('Kelompok (Otomatis)')
+                            ->disabled()
+                            ->dehydrated()
+                            ->placeholder('A11.0001')
+                            ->helperText('KodeProdi.KodeKelompok'),
+
+                        Forms\Components\TextInput::make('jumlah_siswa')
+                            ->label('Jumlah Siswa')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required()
+                            ->placeholder('30'),
+
+                        Forms\Components\Select::make('sesi')
+                            ->label('Sesi Waktu')
+                            ->options([
+                                'pagi' => '🌅 Pagi (07:00)',
+                                'siang' => '☀️ Siang (12:30)',
+                                'malam' => '🌙 Malam (18:30)',
+                            ])
+                            ->required(),
                     ])
-                    ->columns(3),
+                    ->columns(6),
 
                 Forms\Components\Section::make('Pemilihan Laboratorium')
                     ->description('Lab difilter berdasarkan kebutuhan software dan kapasitas')
@@ -286,7 +337,15 @@ class ScheduleResource extends Resource
                     ->label('Mata Kuliah')
                     ->searchable()
                     ->sortable()
-                    ->description(fn(Schedule $record) => $record->kelompok ? "Kelompok {$record->kelompok}" : null),
+                    ->description(fn(Schedule $record) => $record->course?->code ?? null),
+
+                Tables\Columns\TextColumn::make('kelompok')
+                    ->label('Kelompok')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('Tidak ada')
+                    ->badge()
+                    ->color('info'),
 
                 Tables\Columns\TextColumn::make('lecturer.name')
                     ->label('Dosen')
@@ -321,6 +380,29 @@ class ScheduleResource extends Resource
                         query: fn(Builder $query, string $direction) =>
                         $query->orderBy('start_time', $direction)
                     ),
+
+                Tables\Columns\TextColumn::make('jumlah_siswa')
+                    ->label('Siswa')
+                    ->sortable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('sesi')
+                    ->label('Sesi')
+                    ->sortable()
+                    ->badge()
+                    ->formatStateUsing(fn(?string $state): string => match ($state) {
+                        'pagi' => '🌅 Pagi',
+                        'siang' => '☀️ Siang',
+                        'malam' => '🌙 Malam',
+                        default => '-',
+                    })
+                    ->color(fn(?string $state): string => match ($state) {
+                        'pagi' => 'success',
+                        'siang' => 'warning',
+                        'malam' => 'gray',
+                        default => 'primary',
+                    })
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('course.sks')
                     ->label('SKS')

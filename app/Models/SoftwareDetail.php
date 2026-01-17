@@ -13,6 +13,7 @@ class SoftwareDetail extends Model
 
     protected $table = 'software_details';
     protected $fillable = [
+        'code',
         'nama',
         'versi',
         'keterangan',
@@ -36,5 +37,23 @@ class SoftwareDetail extends Model
     public function courses(): BelongsToMany
     {
         return $this->belongsToMany(Course::class, 'course_software');
+    }
+
+    /**
+     * Relasi many-to-many ke Laboratorium via tabel pivot lab_software
+     */
+    public function labs(): BelongsToMany
+    {
+        return $this->belongsToMany(Laboratorium::class, 'lab_software')
+            ->withPivot('version')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get display label: Code - Name
+     */
+    public function getFullLabelAttribute(): string
+    {
+        return $this->code ? "[{$this->code}] {$this->nama}" : $this->nama ?? '';
     }
 }

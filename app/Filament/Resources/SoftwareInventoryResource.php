@@ -92,16 +92,49 @@ class SoftwareInventoryResource extends Resource
                                     $set('preview_kode_inventaris', null);
                                 }
                             }),
-                        // TextInput::make('preview_kode_inventaris')
-                        //     ->label('No Inventaris (Preview)')
-                        //     ->disabled()
-                        //     ->dehydrated(false)
-                        //     ->placeholder('Pilih laboratorium terlebih dahulu')
-                        //     ->helperText('Nomor inventaris yang akan di-generate otomatis')
-                        //     ->extraAttributes(['style' => 'background-color: #f3f4f6; font-weight: 500;']),
-                        TextInput::make('nama_barang')
+
+                        Select::make('software_detail_id')
                             ->label('Nama Software')
-                            ->required(),
+                            ->options(function () {
+                                return SoftwareDetail::whereNotNull('code')
+                                    ->orderBy('nama')
+                                    ->get()
+                                    ->mapWithKeys(fn($sw) => [$sw->id => "[{$sw->code}] {$sw->nama}"]);
+                            })
+                            ->searchable()
+                            ->required()
+                            ->reactive()
+                            ->afterStateUpdated(function ($state, $set) {
+                                if ($state) {
+                                    $software = SoftwareDetail::find($state);
+                                    if ($software) {
+                                        $set('nama_barang', $software->nama);
+                                    }
+                                }
+                            })
+                            ->helperText('Pilih software dari daftar master')
+                            ->createOptionForm([
+                                TextInput::make('code')
+                                    ->label('Kode Software')
+                                    ->required()
+                                    ->unique('software_details', 'code')
+                                    ->maxLength(50)
+                                    ->placeholder('PREMIERE'),
+                                TextInput::make('nama')
+                                    ->label('Nama Software')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->placeholder('Adobe Premiere Pro'),
+                            ])
+                            ->createOptionUsing(function (array $data) {
+                                return SoftwareDetail::create($data)->id;
+                            }),
+
+                        TextInput::make('nama_barang')
+                            ->label('Nama Software (Otomatis)')
+                            ->disabled()
+                            ->dehydrated()
+                            ->helperText('Terisi otomatis dari software yang dipilih'),
                     ])->columns(2)
                     ->extraAttributes(function () {
                         // Auto-trigger afterStateUpdated untuk preview kode inventaris
@@ -149,6 +182,7 @@ class SoftwareInventoryResource extends Resource
                     ->preload(),
             ])
             ->actions([
+                Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (Inventory $record) {
@@ -157,7 +191,7 @@ class SoftwareInventoryResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()->before(function($records){
+                    Tables\Actions\DeleteBulkAction::make()->before(function ($records) {
                         $records->each(fn(Inventory $record) => $record->inventoriable?->delete());
                     }),
                 ]),
@@ -167,7 +201,7 @@ class SoftwareInventoryResource extends Resource
                     ->label('Export Excel')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
-                    ->action(fn ($livewire) => $livewire->exportToExcel())
+                    ->action(fn($livewire) => $livewire->exportToExcel())
             ]);
     }
 

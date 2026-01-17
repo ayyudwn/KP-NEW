@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class Schedule extends Model
 {
@@ -15,6 +16,8 @@ class Schedule extends Model
         'time_slot_id',
         'duration_slots',
         'kelompok',
+        'jumlah_siswa',
+        'sesi',
         'day',
         'start_time',
         'end_time',
@@ -24,6 +27,30 @@ class Schedule extends Model
         'start_time' => 'datetime:H:i',
         'end_time' => 'datetime:H:i',
     ];
+
+    protected $appends = ['kelompok_code'];
+
+    /**
+     * Get the kelompok_code (code part of kelompok after prodi code)
+     * Contoh: "A11.0001" -> "0001"
+     */
+    protected function kelompokCode(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                if (!$this->kelompok) {
+                    return null;
+                }
+                // Parse kode setelah titik, misal "A11.0001" -> "0001"
+                if (str_contains($this->kelompok, '.')) {
+                    $parts = explode('.', $this->kelompok);
+                    return end($parts);
+                }
+                // Jika tidak ada titik, return seluruh kelompok
+                return $this->kelompok;
+            }
+        );
+    }
 
     public function course(): BelongsTo
     {

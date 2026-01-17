@@ -102,11 +102,32 @@ class LaboratoriumResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('software')
                             ->label('Software Terinstal')
-                            ->relationship('software', 'nama')
+                            ->relationship(
+                                name: 'software',
+                                titleAttribute: 'nama',
+                                modifyQueryUsing: fn($query) => $query->whereNotNull('code')
+                            )
+                            ->getOptionLabelFromRecordUsing(fn($record) => "[{$record->code}] {$record->nama}")
                             ->multiple()
                             ->preload()
                             ->searchable()
-                            ->helperText('Pilih software yang terinstal di lab ini'),
+                            ->helperText('Pilih software dari daftar master. Pastikan software sudah terdaftar di menu Daftar Software.')
+                            ->createOptionForm([
+                                Forms\Components\TextInput::make('code')
+                                    ->label('Kode Software')
+                                    ->required()
+                                    ->unique('software_details', 'code')
+                                    ->maxLength(50)
+                                    ->placeholder('PREMIERE'),
+                                Forms\Components\TextInput::make('nama')
+                                    ->label('Nama Software')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->placeholder('Adobe Premiere Pro'),
+                            ])
+                            ->createOptionUsing(function (array $data) {
+                                return \App\Models\SoftwareDetail::create($data)->id;
+                            }),
 
                         Forms\Components\Select::make('priorityProdis')
                             ->label('Prioritas Program Studi')

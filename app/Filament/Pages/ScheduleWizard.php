@@ -55,7 +55,7 @@ class ScheduleWizard extends Page implements HasForms
         return $form
             ->schema([
                 Section::make('Input Jadwal')
-                    ->description('Isi data mata kuliah, dosen, dan kelompok, lalu klik "Cari Slot Tersedia"')
+                    ->description('Isi data mata kuliah, dosen, kelompok, jumlah siswa, dan sesi waktu')
                     ->schema([
                         Select::make('course_id')
                             ->label('Mata Kuliah')
@@ -64,6 +64,9 @@ class ScheduleWizard extends Page implements HasForms
                                     ->get()
                                     ->mapWithKeys(function ($course) {
                                         $label = $course->name;
+                                        if ($course->code) {
+                                            $label = "[{$course->code}] " . $label;
+                                        }
                                         if ($course->prodi) {
                                             $label .= " ({$course->prodi->name})";
                                         }
@@ -75,7 +78,13 @@ class ScheduleWizard extends Page implements HasForms
                             ->preload()
                             ->required()
                             ->live()
-                            ->afterStateUpdated(fn() => $this->resetRecommendations()),
+                            ->afterStateUpdated(function ($state, \Filament\Forms\Set $set) {
+                                $this->resetRecommendations();
+                                // Reset kelompok when course changes
+                                $set('kelompok_code', null);
+                                $set('kelompok', null);
+                            })
+                            ->columnSpan(2),
 
                         Select::make('lecturer_id')
                             ->label('Dosen Pengampu')
@@ -93,12 +102,62 @@ class ScheduleWizard extends Page implements HasForms
                                 return Lecturer::create($data)->id;
                             }),
 
+                        TextInput::make('jumlah_siswa')
+                            ->label('Jumlah Siswa')
+                            ->numeric()
+                            ->minValue(1)
+                            ->required()
+                            ->placeholder('30')
+                            ->helperText('Jumlah mahasiswa yang mengikuti kelas'),
+
+                        TextInput::make('kelompok_code')
+                            ->label('Kode Kelompok/Kelas')
+                            ->placeholder('0001')
+                            ->maxLength(20)
+                            ->live(onBlur: true)
+                            ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
+                                // Generate kelompok lengkap dari prodi code + input
+                                $courseId = $get('course_id');
+                                if ($courseId && $state) {
+                                    $course = Course::with('prodi')->find($courseId);
+                                    if ($course && $course->prodi && $course->prodi->code) {
+                                        $set('kelompok', $course->prodi->code . '.' . $state);
+                                    } else {
+                                        $set('kelompok', $state);
+                                    }
+                                } else {
+                                    $set('kelompok', $state);
+                                }
+                            })
+                            ->helperText(function (\Filament\Forms\Get $get) {
+                                $courseId = $get('course_id');
+                                if ($courseId) {
+                                    $course = Course::with('prodi')->find($courseId);
+                                    if ($course && $course->prodi && $course->prodi->code) {
+                                        return "Kode prodi: {$course->prodi->code}";
+                                    }
+                                }
+                                return "Pilih matkul dulu";
+                            }),
+
                         TextInput::make('kelompok')
-                            ->label('Kelompok/Kelas')
-                            ->placeholder('A, B, C, atau kosongkan')
-                            ->maxLength(50),
+                            ->label('Kelompok (Otomatis)')
+                            ->disabled()
+                            ->dehydrated()
+                            ->placeholder('A11.0001')
+                            ->helperText('KodeProdi.KodeKelompok'),
+
+                        Select::make('sesi')
+                            ->label('Sesi Waktu')
+                            ->options([
+                                'pagi' => '🌅 Pagi (mulai 07:00)',
+                                'siang' => '☀️ Siang (mulai 12:30)',
+                                'malam' => '🌙 Malam (mulai 18:30)',
+                            ])
+                            ->required()
+                            ->helperText('Pilih sesi waktu perkuliahan'),
                     ])
-                    ->columns(3),
+                    ->columns(6),
             ])
             ->statePath('data');
     }
@@ -119,10 +178,28 @@ class ScheduleWizard extends Page implements HasForms
     public function findAvailableSlots(): void
     {
         $courseId = $this->data['course_id'] ?? null;
+        $jumlahSiswa = $this->data['jumlah_siswa'] ?? null;
+        $sesi = $this->data['sesi'] ?? null;
 
         if (!$courseId) {
             Notification::make()
                 ->title('Pilih mata kuliah terlebih dahulu')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$jumlahSiswa) {
+            Notification::make()
+                ->title('Masukkan jumlah siswa terlebih dahulu')
+                ->warning()
+                ->send();
+            return;
+        }
+
+        if (!$sesi) {
+            Notification::make()
+                ->title('Pilih sesi waktu terlebih dahulu')
                 ->warning()
                 ->send();
             return;
@@ -137,25 +214,60 @@ class ScheduleWizard extends Page implements HasForms
             return;
         }
 
+        // Define session time ranges
+        $sessionTimes = [
+            'pagi' => ['start' => '07:00', 'end' => '12:20'],   // Pagi: 07:00 - sebelum 12:30
+            'siang' => ['start' => '12:30', 'end' => '18:20'], // Siang: 12:30 - sebelum 18:30
+            'malam' => ['start' => '18:30', 'end' => '22:00'], // Malam: 18:30 - 22:00
+        ];
+
+        $sessionRange = $sessionTimes[$sesi] ?? $sessionTimes['pagi'];
+
         $service = app(SchedulingService::class);
         $days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
 
         $this->recommendations = [];
 
+        // Get all labs with enough capacity for jumlah_siswa
+        $availableLabs = Laboratorium::where('is_active', true)
+            ->where('pc_siap', '>=', $jumlahSiswa)
+            ->with(['priorityProdis', 'kategori'])
+            ->get();
+
+        // Filter labs that have required software (from inventory)
+        $requiredSoftwareIds = $course->requiredSoftware()->pluck('software_details.id')->toArray();
+        if (!empty($requiredSoftwareIds)) {
+            $requiredCount = count($requiredSoftwareIds);
+            $availableLabs = $availableLabs->filter(function ($lab) use ($requiredSoftwareIds, $requiredCount) {
+                // Get software IDs from lab's inventory (not from lab_software pivot)
+                $labSoftwareIds = \App\Models\Inventory::where('laboratorium_id', $lab->id)
+                    ->where('inventoriable_type', \App\Models\SoftwareDetail::class)
+                    ->pluck('inventoriable_id')
+                    ->toArray();
+                $matchCount = count(array_intersect($requiredSoftwareIds, $labSoftwareIds));
+                return $matchCount >= $requiredCount;
+            });
+        }
+
         foreach ($days as $day) {
             $dayRecommendations = [];
 
-            $availableLabs = $service->getAvailableLabs($course);
-
             foreach ($availableLabs as $lab) {
+                // Get available slots filtered by session time
                 $availableSlots = $service->getAvailableSlots($lab, $day, $course->sks);
 
-                if ($availableSlots->isNotEmpty()) {
+                // Filter slots by session time range
+                $filteredSlots = $availableSlots->filter(function ($slot) use ($sessionRange) {
+                    $slotStartTime = Carbon::parse($slot->start_time)->format('H:i');
+                    return $slotStartTime >= $sessionRange['start'] && $slotStartTime < $sessionRange['end'];
+                });
+
+                if ($filteredSlots->isNotEmpty()) {
                     $isPriority = $course->prodi_id
                         ? $lab->priorityProdis->contains('id', $course->prodi_id)
                         : false;
 
-                    foreach ($availableSlots as $slot) {
+                    foreach ($filteredSlots as $slot) {
                         $endTime = $service->calculateEndTime($slot, $course->sks);
 
                         $dayRecommendations[] = [
@@ -191,7 +303,7 @@ class ScheduleWizard extends Page implements HasForms
         if ($totalSlots === 0) {
             Notification::make()
                 ->title('Tidak ada slot tersedia')
-                ->body('Semua lab penuh atau tidak memenuhi syarat software/kapasitas.')
+                ->body("Lab dengan kapasitas >= {$jumlahSiswa} PC dan slot sesi {$sesi} tidak ditemukan.")
                 ->warning()
                 ->send();
         } else {
@@ -210,9 +322,9 @@ class ScheduleWizard extends Page implements HasForms
     {
         $courseId = $this->data['course_id'] ?? null;
         $lecturerId = $this->data['lecturer_id'] ?? null;
-        $kelompok = $this->data['kelompok'] ?? null;
+        $kelompokCode = $this->data['kelompok_code'] ?? null;
 
-        $course = Course::find($courseId);
+        $course = Course::with('prodi')->find($courseId);
         $lab = Laboratorium::find($labId);
         $slot = TimeSlot::find($slotId);
 
@@ -222,6 +334,16 @@ class ScheduleWizard extends Page implements HasForms
                 ->danger()
                 ->send();
             return;
+        }
+
+        // Generate kelompok dari prodi code + kelompok_code
+        $kelompok = null;
+        if ($kelompokCode) {
+            if ($course->prodi && $course->prodi->code) {
+                $kelompok = $course->prodi->code . '.' . $kelompokCode;
+            } else {
+                $kelompok = $kelompokCode;
+            }
         }
 
         $service = app(SchedulingService::class);
@@ -253,6 +375,8 @@ class ScheduleWizard extends Page implements HasForms
             'start_time' => Carbon::parse($slot->start_time)->format('H:i:s'),
             'end_time' => $endTime . ':00',
             'kelompok' => $kelompok,
+            'jumlah_siswa' => $this->data['jumlah_siswa'] ?? null,
+            'sesi' => $this->data['sesi'] ?? null,
         ]);
 
         Notification::make()
