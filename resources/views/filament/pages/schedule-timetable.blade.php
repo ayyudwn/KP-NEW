@@ -1,196 +1,150 @@
 <x-filament-panels::page>
     <div class="space-y-6">
         <!-- Header dengan dropdown laboratorium -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+            <div class="p-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                     Pilih Laboratorium
                 </h2>
 
-                <!-- Tombol Tambah Jadwal di header -->
-                <div>
-                    {{ $this->createAction }}
+                <div class="max-w-md">
+                    <select wire:model.live="selectedLabId"
+                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white text-sm">
+                        <option value="">-- Pilih Laboratorium --</option>
+                        @foreach(\App\Models\Laboratorium::where('is_active', true)->orderBy('ruang')->get() as $lab)
+                            <option value="{{ $lab->id }}">{{ $lab->ruang }}</option>
+                        @endforeach
+                    </select>
                 </div>
-            </div>
-
-            <div class="max-w-md">
-                <select wire:model.live="selectedLabId"
-                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
-                    <option value="">-- Pilih Laboratorium --</option>
-                    @foreach(\App\Models\Laboratorium::all() as $lab)
-                        <option value="{{ $lab->id }}">{{ $lab->ruang }}</option>
-                    @endforeach
-                </select>
             </div>
         </div>
 
         @if($selectedLabId)
-            <!-- Timetable Grid -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <div class="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-                        Jadwal Laboratorium: {{ \App\Models\Laboratorium::find($selectedLabId)?->ruang }}
-                    </h3>
-                </div>
+            @php
+                $selectedLab = \App\Models\Laboratorium::find($selectedLabId);
+            @endphp
 
+            <!-- Header Jadwal Lab -->
+            <div style="background-color: #b91c1c !important;" class="rounded-xl shadow-lg border border-red-600">
+                <div class="p-6">
+                    <h2 style="color: white !important;" class="text-xl font-bold mb-1">
+                        Penggunaan Ruang {{ $selectedLab?->ruang }}
+                    </h2>
+                    <p style="color: #fecaca !important;" class="text-sm">
+                        Universitas Dian Nuswantoro {{ date('Y') }} / {{ date('Y') + 1 }}
+                    </p>
+                    <p style="color: #fca5a5 !important;" class="text-xs mt-1">
+                        Jalan Nakula I nomor 5 - 11 Semarang Telepon (024) 3517261, 3520165
+                    </p>
+                </div>
+            </div>
+
+            <!-- Tabel Jadwal -->
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <!-- Header tabel -->
-                        <thead class="bg-gray-50 dark:bg-gray-700">
-                            <tr>
-                                <th scope="col"
-                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 min-w-[120px] border-r border-gray-200 dark:border-gray-600">
-                                    Waktu
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-gray-100 dark:bg-gray-700 border-b-2 border-gray-300 dark:border-gray-600">
+                                <th class="px-4 py-3 text-left font-bold text-gray-700 dark:text-gray-200 border-r border-gray-300 dark:border-gray-600 w-24">
+                                    Hari
                                 </th>
-                                @foreach(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'] as $day)
-                                    <th scope="col"
-                                        class="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[180px] border-r border-gray-200 dark:border-gray-600">
-                                        {{ $day }}
-                                    </th>
-                                @endforeach
+                                <th class="px-4 py-3 text-left font-bold text-gray-700 dark:text-gray-200 border-r border-gray-300 dark:border-gray-600 w-32">
+                                    Jadwal
+                                </th>
+                                <th class="px-4 py-3 text-left font-bold text-gray-700 dark:text-gray-200 border-r border-gray-300 dark:border-gray-600">
+                                    Nama Mata Kuliah
+                                </th>
+                                <th class="px-4 py-3 text-left font-bold text-gray-700 dark:text-gray-200 border-r border-gray-300 dark:border-gray-600 w-28">
+                                    Kelompok
+                                </th>
+                                <th class="px-4 py-3 text-left font-bold text-gray-700 dark:text-gray-200 w-64">
+                                    Dosen
+                                </th>
                             </tr>
                         </thead>
+                        <tbody>
+                            @foreach(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'] as $dayIndex => $day)
+                                @php
+                                    $daySchedules = $schedulesByDay[$day] ?? collect();
+                                    $timeSlots = $this->getTimeSlots();
+                                @endphp
 
-                        <!-- Body tabel -->
-                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            @foreach($this->getTimeSlots() as $time)
-                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                    <!-- Kolom waktu (sticky) -->
-                                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white sticky left-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-600 z-10">
-                                        @php
-                                            $startTime = \Carbon\Carbon::createFromFormat('H:i', $time);
-                                            $endTime = $startTime->copy()->addMinutes(50);
-                                        @endphp
-                                        <div class="text-center">
-                                            <div class="font-semibold">{{ $time }}</div>
-                                            <div class="text-xs text-gray-500 dark:text-gray-400">{{ $endTime->format('H:i') }}</div>
-                                        </div>
-                                    </td>
+                                @foreach($timeSlots as $slotIndex => $timeSlot)
+                                    @php
+                                        // Convert current slot to minutes for comparison
+                                        $slotStart = \Carbon\Carbon::createFromFormat('H:i', $timeSlot);
+                                        $slotEnd = $slotStart->copy()->addMinutes(50);
 
-                                    <!-- Kolom hari -->
-                                    @foreach(['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'] as $day)
-                                        <td class="px-1 py-1 text-sm text-gray-900 dark:text-white border-r border-gray-200 dark:border-gray-600 min-h-[70px]">
-                                            @php
-                                                $schedule = $schedulesByTimeSlotAndDay[$time][$day] ?? null;
-                                            @endphp
+                                        // Find schedule that covers this time slot
+                                        // A schedule covers this slot if: schedule.start_time <= slotStart AND schedule.end_time > slotStart
+                                        $schedule = $daySchedules->first(function($s) use ($slotStart) {
+                                            $scheduleStart = \Carbon\Carbon::parse($s->start_time);
+                                            $scheduleEnd = \Carbon\Carbon::parse($s->end_time);
 
-                                            @if($schedule)
-                                                <!-- Sel terisi - klik untuk edit -->
-                                                <button
-                                                    wire:click="mountAction('edit', { 'scheduleId': {{ $schedule->id }} })"
-                                                    class="w-full h-full min-h-[66px] text-left p-2 rounded-md bg-primary-100 hover:bg-primary-200 dark:bg-primary-900 dark:hover:bg-primary-800 border border-primary-300 dark:border-primary-700 transition-all duration-200 group relative overflow-hidden"
-                                                >
-                                                    <div class="relative z-10">
-                                                        <!-- Nama mata kuliah -->
-                                                        <div class="font-medium text-primary-900 dark:text-primary-100 text-xs mb-1 leading-tight">
-                                                            {{ Str::limit($schedule->course->name ?? 'N/A', 25) }}
-                                                        </div>
+                                            // Check if this slot falls within the schedule's time range
+                                            return $scheduleStart->lte($slotStart) && $scheduleEnd->gt($slotStart);
+                                        });
+                                    @endphp
+                                    <tr class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/30 {{ $slotIndex === 0 ? 'border-t-2 border-t-gray-400 dark:border-t-gray-500' : '' }}">
+                                        @if($slotIndex === 0)
+                                            <td class="px-4 py-2 font-semibold text-gray-800 dark:text-gray-200 border-r border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 align-top"
+                                                rowspan="{{ count($timeSlots) }}">
+                                                {{ $day }}
+                                            </td>
+                                        @endif
 
-                                                        <!-- Kelompok (jika ada) -->
-                                                        @if($schedule->kelompok && $schedule->kelompok !== 'Semua')
-                                                            <div class="text-xs text-primary-700 dark:text-primary-300 mb-1">
-                                                                Klp: {{ $schedule->kelompok }}
-                                                            </div>
-                                                        @endif
-
-                                                        <!-- Nama dosen -->
-                                                        <div class="text-xs text-primary-600 dark:text-primary-400 mb-1">
-                                                            {{ Str::limit($schedule->lecturer->name ?? 'Belum Ditentukan', 20) }}
-                                                        </div>
-
-                                                        <!-- Waktu -->
-                                                        <div class="text-xs text-primary-500 dark:text-primary-500">
-                                                            {{ \Carbon\Carbon::parse($schedule->start_time)->format('H:i') }} -
-                                                            {{ \Carbon\Carbon::parse($schedule->end_time)->format('H:i') }}
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Hover effect overlay -->
-                                                    <div class="absolute inset-0 bg-primary-600 opacity-0 group-hover:opacity-10 transition-opacity duration-200"></div>
-
-                                                    <!-- Edit icon on hover -->
-                                                    <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                        <div class="p-1 bg-white dark:bg-gray-800 rounded shadow-sm">
-                                                            <svg class="w-3 h-3 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                                                            </svg>
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            @else
-                                                <!-- Sel kosong - klik untuk create -->
-                                                <button
-                                                    wire:click="mountAction('create', { 'day': '{{ $day }}', 'time': '{{ $time }}' })"
-                                                    class="w-full h-full min-h-[66px] text-left p-2 rounded-md border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 group flex items-center justify-center"
-                                                    title="Klik untuk menambah jadwal pada {{ $day }} jam {{ $time }}"
-                                                >
-                                                    <!-- Plus icon (hidden by default, shown on hover) -->
-                                                    <svg class="w-6 h-6 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 dark:group-hover:text-primary-400 opacity-0 group-hover:opacity-100 transition-all duration-200"
-                                                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                                                    </svg>
-                                                </button>
-                                            @endif
+                                        <td class="px-4 py-2 text-gray-600 dark:text-gray-400 border-r border-gray-300 dark:border-gray-600 font-mono text-xs whitespace-nowrap">
+                                            {{ $timeSlot }}-{{ $slotEnd->format('H:i') }}
                                         </td>
-                                    @endforeach
-                                </tr>
+
+                                        @if($schedule)
+                                            <td class="px-4 py-2 text-gray-900 dark:text-white border-r border-gray-300 dark:border-gray-600 font-medium bg-blue-50 dark:bg-blue-900/20">
+                                                {{ strtoupper($schedule->course?->name ?? '-') }}
+                                            </td>
+                                            <td class="px-4 py-2 text-gray-700 dark:text-gray-300 border-r border-gray-300 dark:border-gray-600 bg-blue-50 dark:bg-blue-900/20">
+                                                {{ $schedule->kelompok ?? '-' }}
+                                            </td>
+                                            <td class="px-4 py-2 text-gray-700 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20">
+                                                {{ strtoupper($schedule->lecturer?->name ?? '-') }}
+                                            </td>
+                                        @else
+                                            <td class="px-4 py-2 text-gray-300 dark:text-gray-600 border-r border-gray-300 dark:border-gray-600">
+                                                -
+                                            </td>
+                                            <td class="px-4 py-2 text-gray-300 dark:text-gray-600 border-r border-gray-300 dark:border-gray-600">
+                                                -
+                                            </td>
+                                            <td class="px-4 py-2 text-gray-300 dark:text-gray-600">
+                                                -
+                                            </td>
+                                        @endif
+                                    </tr>
+                                @endforeach
                             @endforeach
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Keterangan -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-3">Keterangan:</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-gray-600 dark:text-gray-400">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-4 h-4 bg-primary-100 dark:bg-primary-900 border border-primary-300 dark:border-primary-700 rounded"></div>
-                        <span>Jadwal yang sudah ada</span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <div class="w-4 h-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded"></div>
-                        <span>Slot kosong (klik untuk menambah)</span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                        </svg>
-                        <span>Klik jadwal untuk edit/hapus</span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-1 rounded">1 SKS = 50 menit</span>
-                        <span>Durasi otomatis</span>
-                    </div>
-
-                    <!-- Informasi tambahan -->
-                    <div class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                        <div class="flex items-start">
-                            <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <div class="text-sm text-blue-800 dark:text-blue-200">
-                                <strong>Tips:</strong> Jadwal dengan durasi multi-SKS akan mengisi beberapa slot waktu secara otomatis.
-                                Klik pada slot kosong untuk menambah jadwal baru, atau klik pada jadwal yang ada untuk mengedit.
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <!-- Footer Keterangan -->
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 border border-yellow-200 dark:border-yellow-800">
+                <p class="text-sm text-yellow-800 dark:text-yellow-200">
+                    <span class="font-semibold">*</span>Untuk Permohonan Pemindahan Ruang / Jadwal Praktikum dan Kelas Tambahan
+                    Dapat Menghubungi Petugas di Ruang Koordinator Laboratorium
+                </p>
             </div>
+
         @else
             <!-- Pesan jika belum ada laboratorium yang dipilih -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-                <svg class="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center border border-gray-200 dark:border-gray-700">
+                <svg class="mx-auto h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
                 </svg>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Pilih Laboratorium</h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
-                    Silakan pilih laboratorium di atas untuk melihat dan mengelola jadwal dalam format timetable visual.
+                <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">Pilih Laboratorium</h3>
+                <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                    Silakan pilih laboratorium di atas untuk melihat jadwal penggunaan ruang dalam format tabel.
                 </p>
             </div>
         @endif
     </div>
-
-    <!-- Modal untuk create/edit/delete actions -->
-    <x-filament-actions::modals />
 </x-filament-panels::page>
