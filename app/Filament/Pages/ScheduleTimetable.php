@@ -4,11 +4,18 @@ namespace App\Filament\Pages;
 
 use App\Models\Schedule;
 use App\Models\Laboratorium;
+use App\Exports\TimetableExport;
 use Filament\Pages\Page;
+use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
+use Maatwebsite\Excel\Facades\Excel;
 use Carbon\Carbon;
 
-class ScheduleTimetable extends Page
+class ScheduleTimetable extends Page implements HasActions
 {
+    use InteractsWithActions;
+
     protected static ?string $navigationIcon = 'heroicon-o-table-cells';
 
     protected static ?string $navigationGroup = 'Penjadwalan';
@@ -88,10 +95,27 @@ class ScheduleTimetable extends Page
     }
 
     /**
-     * Tidak ada header actions karena ini view-only
+     * Action untuk export seluruh jadwal ke Excel
+     */
+    public function exportAction(): Action
+    {
+        return Action::make('export')
+            ->label('Export Excel')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->color('success')
+            ->action(function () {
+                $filename = 'Jadwal_Laboratorium_' . date('Y-m-d') . '.xlsx';
+                return Excel::download(new TimetableExport(), $filename);
+            });
+    }
+
+    /**
+     * Header actions dengan tombol export
      */
     protected function getHeaderActions(): array
     {
-        return [];
+        return [
+            $this->exportAction(),
+        ];
     }
 }
