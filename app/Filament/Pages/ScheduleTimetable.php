@@ -47,16 +47,69 @@ class ScheduleTimetable extends Page implements HasActions
 
     /**
      * Menghasilkan array slot waktu per 50 menit dari 07:00 hingga 21:00
+     * (skipping break times: 12:00-12:30, 15:50-16:20, 18:00-18:30)
      */
     public function getTimeSlots(): array
     {
         $slots = [];
-        $start = Carbon::createFromTime(7, 0);
-        $end = Carbon::createFromTime(21, 0);
+        $current = Carbon::createFromTime(7, 0);
+        $maxEnd = Carbon::createFromTime(21, 0);
 
-        while ($start->lessThan($end)) {
-            $slots[] = $start->format('H:i');
-            $start->addMinutes(50);
+        // Break times
+        $breaks = [
+            ['start' => '12:00', 'end' => '12:30'],
+            ['start' => '15:50', 'end' => '16:20'],
+            ['start' => '18:00', 'end' => '18:30'],
+        ];
+
+        while ($current->lt($maxEnd)) {
+            $slotEnd = $current->copy()->addMinutes(50);
+
+            // Check if slot would end after max time
+            if ($slotEnd->gt($maxEnd)) {
+                break;
+            }
+
+            // Check if current position is inside a break - if so, skip to break end
+            $insideBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+                $breakEnd = Carbon::createFromFormat('H:i', $break['end']);
+
+                if ($current->gte($breakStart) && $current->lt($breakEnd)) {
+                    // We're inside a break, jump to break end
+                    $current = $breakEnd->copy();
+                    $insideBreak = true;
+                    break;
+                }
+            }
+
+            if ($insideBreak) {
+                continue;
+            }
+
+            // Check if slot would cross into a break
+            $crossesBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+
+                // If slot ends after break starts and starts before break starts
+                if ($current->lt($breakStart) && $slotEnd->gt($breakStart)) {
+                    // Slot would cross into break - add slot up to break start, then skip
+                    $slots[] = $current->format('H:i');
+                    $current = Carbon::createFromFormat('H:i', $break['end']);
+                    $crossesBreak = true;
+                    break;
+                }
+            }
+
+            if ($crossesBreak) {
+                continue;
+            }
+
+            // Normal slot
+            $slots[] = $current->format('H:i');
+            $current->addMinutes(50);
         }
 
         return $slots;

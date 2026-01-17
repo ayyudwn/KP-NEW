@@ -60,12 +60,61 @@ class LabScheduleSheet implements FromArray, WithTitle, WithStyles, WithColumnWi
     protected function getTimeSlots(): array
     {
         $slots = [];
-        $start = Carbon::createFromTime(7, 0);
-        $end = Carbon::createFromTime(21, 0);
+        $current = Carbon::createFromTime(7, 0);
+        $maxEnd = Carbon::createFromTime(21, 0);
 
-        while ($start->lessThan($end)) {
-            $slots[] = $start->format('H:i');
-            $start->addMinutes(50);
+        // Break times
+        $breaks = [
+            ['start' => '12:00', 'end' => '12:30'],
+            ['start' => '15:50', 'end' => '16:20'],
+            ['start' => '18:00', 'end' => '18:30'],
+        ];
+
+        while ($current->lt($maxEnd)) {
+            $slotEnd = $current->copy()->addMinutes(50);
+
+            // Check if slot would end after max time
+            if ($slotEnd->gt($maxEnd)) {
+                break;
+            }
+
+            // Check if current position is inside a break - if so, skip to break end
+            $insideBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+                $breakEnd = Carbon::createFromFormat('H:i', $break['end']);
+
+                if ($current->gte($breakStart) && $current->lt($breakEnd)) {
+                    $current = $breakEnd->copy();
+                    $insideBreak = true;
+                    break;
+                }
+            }
+
+            if ($insideBreak) {
+                continue;
+            }
+
+            // Check if slot would cross into a break
+            $crossesBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+
+                if ($current->lt($breakStart) && $slotEnd->gt($breakStart)) {
+                    $slots[] = $current->format('H:i');
+                    $current = Carbon::createFromFormat('H:i', $break['end']);
+                    $crossesBreak = true;
+                    break;
+                }
+            }
+
+            if ($crossesBreak) {
+                continue;
+            }
+
+            // Normal slot
+            $slots[] = $current->format('H:i');
+            $current->addMinutes(50);
         }
 
         return $slots;
@@ -137,6 +186,8 @@ class LabScheduleSheet implements FromArray, WithTitle, WithStyles, WithColumnWi
         // Footer
         $data[] = [];
         $data[] = ['*Untuk Permohonan Pemindahan Ruang / Jadwal Praktikum dan Kelas Tambahan Dapat Menghubungi Petugas di Ruang Koordinator Laboratorium'];
+        $data[] = [];
+        $data[] = ['Koordinator Penjadwalan : Riza Agung Nugroho, S.Kom', '', '', Carbon::now()->format('n/j/y G:i'), ''];
 
         return $data;
     }
