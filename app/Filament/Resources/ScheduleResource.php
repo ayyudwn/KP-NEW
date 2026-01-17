@@ -40,53 +40,58 @@ class ScheduleResource extends Resource
                 Forms\Components\Section::make('Informasi Mata Kuliah')
                     ->description('Pilih mata kuliah untuk dijadwalkan')
                     ->schema([
-                        Forms\Components\Select::make('course_id')
-                            ->label('Mata Kuliah')
-                            ->relationship('course', 'name')
-                            ->getOptionLabelFromRecordUsing(
-                                fn(Course $record) =>
-                                ($record->code ? "[{$record->code}] " : '') .
-                                $record->name .
-                                ($record->prodi ? " ({$record->prodi->name})" : '') .
-                                " - {$record->sks} SKS"
-                            )
+                        Forms\Components\Select::make('prodi_filter')
+                            ->label('Program Studi')
+                            ->options(\App\Models\Prodi::pluck('name', 'id'))
                             ->searchable()
                             ->preload()
                             ->required()
                             ->live()
+                            ->dehydrated(false)
                             ->afterStateUpdated(function (Set $set) {
-                                // Reset dependent fields when course changes
+                                $set('course_id', null);
                                 $set('laboratorium_id', null);
                                 $set('time_slot_id', null);
                                 $set('kelompok_code', null);
                                 $set('kelompok', null);
                             })
-                            ->helperText(function (Get $get) {
-                                $courseId = $get('course_id');
-                                if (!$courseId) {
-                                    return 'Pilih mata kuliah untuk melihat lab yang tersedia';
+                            ->afterStateHydrated(function ($component, $state, ?Schedule $record) {
+                                if (!$state && $record?->course?->prodi_id) {
+                                    $component->state($record->course->prodi_id);
                                 }
+                            })
+                            ->helperText('Pilih program studi terlebih dahulu'),
 
-                                $course = Course::with('requiredSoftware', 'prodi')->find($courseId);
-                                if (!$course) {
-                                    return null;
+                        Forms\Components\Select::make('course_id')
+                            ->label('Mata Kuliah')
+                            ->options(function (Get $get) {
+                                $prodiId = $get('prodi_filter');
+                                if (!$prodiId) {
+                                    return [];
                                 }
-
-                                $info = [];
-                                $info[] = "SKS: {$course->sks}";
-
-                                if ($course->prodi) {
-                                    $info[] = "Prodi: {$course->prodi->name}";
-                                }
-
-                                $softwareCount = $course->requiredSoftware->count();
-                                if ($softwareCount > 0) {
-                                    $softwareNames = $course->requiredSoftware->pluck('nama')->take(3)->join(', ');
-                                    $info[] = "Software: {$softwareNames}" . ($softwareCount > 3 ? '...' : '');
-                                }
-
-                                return implode(' | ', $info);
-                            }),
+                                return Course::where('prodi_id', $prodiId)
+                                    ->get()
+                                    ->mapWithKeys(function ($course) {
+                                        $label = $course->name;
+                                        if ($course->code) {
+                                            $label = "[{$course->code}] " . $label;
+                                        }
+                                        $label .= " - {$course->sks} SKS";
+                                        return [$course->id => $label];
+                                    });
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->live()
+                            ->disabled(fn(Get $get) => !$get('prodi_filter'))
+                            ->afterStateUpdated(function (Set $set) {
+                                $set('laboratorium_id', null);
+                                $set('time_slot_id', null);
+                                $set('kelompok_code', null);
+                                $set('kelompok', null);
+                            })
+                            ->helperText(fn(Get $get) => !$get('prodi_filter') ? 'Pilih prodi terlebih dahulu' : 'Pilih mata kuliah'),
 
                         Forms\Components\Select::make('lecturer_id')
                             ->label('Dosen Pengampu')
@@ -158,25 +163,17 @@ class ScheduleResource extends Resource
                     ->columns(6),
 
                 Forms\Components\Section::make('Pemilihan Laboratorium')
-                    ->description('Lab difilter berdasarkan kebutuhan software dan kapasitas')
+                    ->description('Pilih laboratorium untuk jadwal (bebas pilih lab mana saja)')
                     ->schema([
                         Forms\Components\Select::make('laboratorium_id')
                             ->label('Laboratorium')
-                            ->options(function (Get $get) {
-                                $courseId = $get('course_id');
-                                if (!$courseId) {
-                                    return [];
-                                }
-
-                                $course = Course::find($courseId);
-                                if (!$course) {
-                                    return [];
-                                }
-
-                                $service = app(SchedulingService::class);
-                                return $service->getLabOptionsForForm($course);
+                            ->options(function () {
+                                return Laboratorium::where('is_active', true)
+                                    ->orderBy('ruang')
+                                    ->pluck('ruang', 'id');
                             })
                             ->searchable()
+                            ->preload()
                             ->required()
                             ->live()
                             ->afterStateUpdated(function (Set $set) {
@@ -184,34 +181,9 @@ class ScheduleResource extends Resource
                             })
                             ->disabled(fn(Get $get) => !$get('course_id'))
                             ->placeholder(fn(Get $get) => $get('course_id')
-                                ? 'Pilih laboratorium yang tersedia'
+                                ? 'Pilih laboratorium'
                                 : 'Pilih mata kuliah terlebih dahulu')
-                            ->helperText(function (Get $get) {
-                                $courseId = $get('course_id');
-                                if (!$courseId) {
-                                    return null;
-                                }
-
-                                $course = Course::find($courseId);
-                                $service = app(SchedulingService::class);
-                                $labs = $service->getAvailableLabs($course);
-
-                                $count = $labs->count();
-                                if ($count === 0) {
-                                    return '⚠️ Tidak ada lab yang memenuhi syarat (cek software & kapasitas)';
-                                }
-
-                                $priorityCount = $labs->filter(function ($lab) use ($course) {
-                                    return $course->prodi_id && $lab->priorityProdis->contains('id', $course->prodi_id);
-                                })->count();
-
-                                $msg = "✓ {$count} lab tersedia";
-                                if ($priorityCount > 0) {
-                                    $msg .= " ({$priorityCount} prioritas ⭐)";
-                                }
-
-                                return $msg;
-                            }),
+                            ->helperText('Semua lab aktif tersedia. Pastikan waktu tidak bertabrakan.'),
                     ])
                     ->columns(1),
 
