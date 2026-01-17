@@ -126,14 +126,6 @@
                 </div>
             </div>
 
-            <!-- Footer Keterangan -->
-            <div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 border border-yellow-200 dark:border-yellow-800">
-                <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                    <span class="font-semibold">*</span>Untuk Permohonan Pemindahan Ruang / Jadwal Praktikum dan Kelas Tambahan
-                    Dapat Menghubungi Petugas di Ruang Koordinator Laboratorium
-                </p>
-            </div>
-
         @else
             <!-- Pesan jika belum ada laboratorium yang dipilih -->
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 text-center border border-gray-200 dark:border-gray-700">
