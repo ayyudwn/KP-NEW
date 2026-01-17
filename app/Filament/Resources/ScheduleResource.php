@@ -259,6 +259,70 @@ class ScheduleResource extends Resource
                             })
                             ->required()
                             ->live()
+                            ->afterStateUpdated(function ($state, Set $set) {
+                                // Auto-update sesi based on time slot
+                                if ($state) {
+                                    $slot = TimeSlot::find($state);
+                                    if ($slot) {
+                                        $startTime = Carbon::parse($slot->start_time)->format('H:i');
+
+                                        // Determine session based on start time
+                                        if ($startTime >= '07:00' && $startTime < '12:30') {
+                                            $set('sesi', 'pagi');
+                                        } elseif ($startTime >= '12:30' && $startTime < '18:30') {
+                                            $set('sesi', 'siang');
+                                        } else {
+                                            $set('sesi', 'malam');
+                                        }
+                                    }
+                                }
+                            })
+                            ->rules([
+                                function (Get $get, ?Schedule $record) {
+                                    return function (string $attribute, $value, \Closure $fail) use ($get, $record) {
+                                        $labId = $get('laboratorium_id');
+                                        $day = $get('day');
+                                        $courseId = $get('course_id');
+
+                                        if (!$labId || !$day || !$courseId || !$value) {
+                                            return;
+                                        }
+
+                                        $newCourse = Course::find($courseId);
+                                        $newSlot = TimeSlot::find($value);
+
+                                        if (!$newCourse || !$newSlot) {
+                                            return;
+                                        }
+
+                                        // Calculate new schedule range
+                                        $newStart = $newSlot->slot_number;
+                                        $newEnd = $newStart + $newCourse->sks - 1;
+
+                                        // Fetch all existing schedules for this lab and day
+                                        $existingSchedules = Schedule::where('laboratorium_id', $labId)
+                                            ->where('day', $day)
+                                            ->when($record, fn($q) => $q->where('id', '!=', $record->id))
+                                            ->with(['course', 'timeSlot'])
+                                            ->get();
+
+                                        foreach ($existingSchedules as $schedule) {
+                                            if (!$schedule->course || !$schedule->timeSlot)
+                                                continue;
+
+                                            $existingStart = $schedule->timeSlot->slot_number;
+                                            $existingEnd = $existingStart + $schedule->course->sks - 1;
+
+                                            // Check overlap: max(start1, start2) <= min(end1, end2)
+                                            if (max($existingStart, $newStart) <= min($existingEnd, $newEnd)) {
+                                                $conflictTime = Carbon::parse($schedule->timeSlot->start_time)->format('H:i');
+                                                $fail("Jadwal bertabrakan dengan {$schedule->course->name} ({$conflictTime})");
+                                                return;
+                                            }
+                                        }
+                                    };
+                                },
+                            ])
                             ->disabled(fn(Get $get) => !$get('day') || !$get('laboratorium_id'))
                             ->placeholder(function (Get $get) {
                                 if (!$get('laboratorium_id')) {

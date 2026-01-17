@@ -316,6 +316,34 @@ class SchedulingService
     ): array {
         $slots = $this->getAvailableSlots($lab, $day, $slotsNeeded, $excludeScheduleId);
 
+        // Filter break times logic
+        $breakTimes = [
+            ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
+            ['start' => '15:50', 'end' => '16:20'], // Istirahat sore
+            ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
+        ];
+        $maxEndTime = '21:00';
+
+        $slots = $slots->filter(function ($slot) use ($slotsNeeded, $breakTimes, $maxEndTime) {
+            $slotStart = Carbon::parse($slot->start_time)->format('H:i');
+            $endTime = $this->calculateEndTime($slot, $slotsNeeded);
+
+            // Check max end time
+            if ($endTime > $maxEndTime) {
+                return false;
+            }
+
+            // Check break times overlap
+            foreach ($breakTimes as $break) {
+                // Overlap condition: Start < BreakEnd AND End > BreakStart
+                if ($slotStart < $break['end'] && $endTime > $break['start']) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
         return $slots->mapWithKeys(function ($slot) use ($slotsNeeded) {
             $startTime = Carbon::parse($slot->start_time)->format('H:i');
             $endTime = $this->calculateEndTime($slot, $slotsNeeded);
