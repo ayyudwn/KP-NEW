@@ -57,18 +57,35 @@ class ScheduleWizard extends Page implements HasForms
                 Section::make('Input Jadwal')
                     ->description('Isi data mata kuliah, dosen, kelompok, jumlah siswa, dan sesi waktu')
                     ->schema([
+                        Select::make('prodi_id')
+                            ->label('Program Studi')
+                            ->options(\App\Models\Prodi::pluck('name', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(function ($state, \Filament\Forms\Set $set) {
+                                // Reset course when prodi changes
+                                $set('course_id', null);
+                                $set('kelompok_code', null);
+                                $set('kelompok', null);
+                                $this->resetRecommendations();
+                            })
+                            ->helperText('Pilih program studi terlebih dahulu'),
+
                         Select::make('course_id')
                             ->label('Mata Kuliah')
-                            ->options(function () {
-                                return Course::with('prodi')
+                            ->options(function (\Filament\Forms\Get $get) {
+                                $prodiId = $get('prodi_id');
+                                if (!$prodiId) {
+                                    return [];
+                                }
+                                return Course::where('prodi_id', $prodiId)
                                     ->get()
                                     ->mapWithKeys(function ($course) {
                                         $label = $course->name;
                                         if ($course->code) {
                                             $label = "[{$course->code}] " . $label;
-                                        }
-                                        if ($course->prodi) {
-                                            $label .= " ({$course->prodi->name})";
                                         }
                                         $label .= " - {$course->sks} SKS";
                                         return [$course->id => $label];
@@ -78,6 +95,8 @@ class ScheduleWizard extends Page implements HasForms
                             ->preload()
                             ->required()
                             ->live()
+                            ->disabled(fn(\Filament\Forms\Get $get) => !$get('prodi_id'))
+                            ->helperText(fn(\Filament\Forms\Get $get) => !$get('prodi_id') ? 'Pilih prodi terlebih dahulu' : null)
                             ->afterStateUpdated(function ($state, \Filament\Forms\Set $set) {
                                 $this->resetRecommendations();
                                 // Reset kelompok when course changes
