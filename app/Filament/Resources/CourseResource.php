@@ -176,18 +176,19 @@ class CourseResource extends Resource
                     ->label('Software Dibutuhkan')
                     ->badge()
                     ->getStateUsing(function ($record) {
-                        if (empty($record->software_requirements)) {
+                        $count = $record->software()->count();
+                        if ($count === 0) {
                             return '0';
                         }
-                        $count = count($record->software_requirements);
-                        return $count . ' Software';
+                        return $count;
                     })
                     ->color('info')
                     ->tooltip(function ($record) {
-                        if (empty($record->software_requirements)) {
+                        $software = $record->software()->get();
+                        if ($software->isEmpty()) {
                             return 'Tidak ada software yang dibutuhkan';
                         }
-                        return 'Software: ' . collect($record->software_requirements)->join(', ');
+                        return 'Software: ' . $software->pluck('nama')->join(', ');
                     }),
 
                 Tables\Columns\TextColumn::make('created_at')
