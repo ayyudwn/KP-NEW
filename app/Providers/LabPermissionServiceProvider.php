@@ -42,6 +42,8 @@ class LabPermissionServiceProvider extends ServiceProvider
 
     /**
      * Create custom permissions for each lab in the system
+     * Format: {lab_slug}_view, {lab_slug}_manage, etc.
+     * This groups permissions by lab in Shield's UI
      */
     protected function createLabPermissions(): void
     {
@@ -50,29 +52,44 @@ class LabPermissionServiceProvider extends ServiceProvider
             return;
         }
 
-        // Get all laboratories
-        $laboratories = Laboratorium::all();
+        // Get all laboratories ordered by ruang
+        $laboratories = Laboratorium::orderBy('ruang')->get();
 
         // Define the actions we want to allow for each laboratory
-        $labActions = ['view', 'manage', 'edit', 'delete'];
+        $labActions = [
+            'view' => 'Lihat',
+            'manage' => 'Kelola',
+            'edit' => 'Edit',
+            'delete' => 'Hapus'
+        ];
 
         // Create a permission for each lab and each action
         foreach ($laboratories as $lab) {
             $labSlug = strtolower(str_replace([' ', '.'], ['_', '_'], $lab->ruang));
 
-            foreach ($labActions as $action) {
-                $permissionName = "lab_{$action}_{$labSlug}";
+            foreach ($labActions as $action => $actionLabel) {
+                // Format: lab_{lab_slug}_{action} - groups by lab in Shield
+                $permissionName = "lab_{$labSlug}_{$action}";
 
                 // Create the permission if it doesn't exist
-                Permission::firstOrCreate(['name' => $permissionName, 'guard_name' => 'web'], [
-                    'name' => $permissionName,
-                    'guard_name' => 'web',
-                    'description' => ucfirst($action) . ' ' . $lab->ruang . ' laboratory'
-                ]);
+                Permission::firstOrCreate(['name' => $permissionName, 'guard_name' => 'web']);
             }
         }
 
         // Clear permission cache after adding new permissions
         app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    /**
+     * Get all lab permission names for a specific lab
+     */
+    public static function getLabPermissionNames(string $labSlug): array
+    {
+        return [
+            "lab_{$labSlug}_view",
+            "lab_{$labSlug}_manage",
+            "lab_{$labSlug}_edit",
+            "lab_{$labSlug}_delete",
+        ];
     }
 }

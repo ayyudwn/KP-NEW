@@ -29,7 +29,16 @@ class SoftwareInventoryResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('inventoriable_type', SoftwareDetail::class);
+        $query = parent::getEloquentQuery()->where('inventoriable_type', SoftwareDetail::class);
+
+        // Filter by user's authorized labs
+        $user = auth()->user();
+        if ($user && !$user->hasRole('super_admin')) {
+            $authorizedLabIds = $user->getAuthorizedLabIds('view');
+            $query->whereIn('laboratorium_id', $authorizedLabIds);
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -40,7 +49,13 @@ class SoftwareInventoryResource extends Resource
                     ->schema([
                         Select::make('laboratorium_id')
                             ->label('Laboratorium')
-                            ->relationship('laboratorium', 'ruang')
+                            ->relationship(
+                                'laboratorium',
+                                'ruang',
+                                fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                                ? $query
+                                : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                            )
                             ->required()
                             ->preload()
                             ->searchable()
@@ -78,13 +93,21 @@ class SoftwareInventoryResource extends Resource
                                     $laboratorium = \App\Models\Laboratorium::find($state);
                                     $namaLab = $laboratorium ? strtoupper($laboratorium->ruang) : 'LAB';
 
-                                    // Hitung nomor urut Software untuk lab ini
-                                    $existingSoftware = \App\Models\Inventory::where('laboratorium_id', $state)
+                                    // Cari nomor urut tertinggi yang pernah digunakan untuk lab ini
+                                    $lastInventory = \App\Models\Inventory::where('laboratorium_id', $state)
                                         ->where('inventoriable_type', 'App\Models\SoftwareDetail')
                                         ->whereNotNull('kode_inventaris')
-                                        ->count();
+                                        ->orderByRaw("CAST(SUBSTRING_INDEX(kode_inventaris, '/', -1) AS UNSIGNED) DESC")
+                                        ->first();
 
-                                    $nomorUrut = str_pad($existingSoftware + 1, 2, '0', STR_PAD_LEFT);
+                                    $lastNumber = 0;
+                                    if ($lastInventory && $lastInventory->kode_inventaris) {
+                                        // Extract the last number from kode like "UDN/LABKOM/INV/SOFTWARE/D2A/12"
+                                        $parts = explode('/', $lastInventory->kode_inventaris);
+                                        $lastNumber = (int) end($parts);
+                                    }
+
+                                    $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                                     // Set nomor inventaris yang akan di-generate
                                     $set('preview_kode_inventaris', "UDN/LABKOM/INV/SOFTWARE/{$namaLab}/{$nomorUrut}");
@@ -178,22 +201,25 @@ class SoftwareInventoryResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('laboratorium')
-                    ->relationship('laboratorium', 'ruang')
+                    ->relationship(
+                        'laboratorium',
+                        'ruang',
+                        fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                        ? $query
+                        : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                    )
                     ->preload(),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make()
-                    ->before(function (Inventory $record) {
-                        $record->inventoriable?->delete();
-                    }),
+                // Note: Tidak menghapus inventoriable karena SoftwareDetail adalah master data
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()->before(function ($records) {
-                        $records->each(fn(Inventory $record) => $record->inventoriable?->delete());
-                    }),
+                    // Note: Tidak menghapus inventoriable karena SoftwareDetail adalah master data
+                    Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
             ->headerActions([

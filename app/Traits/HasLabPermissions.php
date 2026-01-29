@@ -36,7 +36,8 @@ trait HasLabPermissions
         }
 
         $labSlug = strtolower(str_replace([' ', '.'], ['_', '_'], $labName));
-        $permissionName = "lab_{$action}_{$labSlug}";
+        // Format: lab_{slug}_{action}
+        $permissionName = "lab_{$labSlug}_{$action}";
 
         return $this->can($permissionName);
     }
@@ -54,7 +55,7 @@ trait HasLabPermissions
         Cache::forget($cacheKey);
 
         // Cache the results for a shorter time during testing (5 minutes)
-        return Cache::remember($cacheKey, 300, function() use ($action) {
+        return Cache::remember($cacheKey, 300, function () use ($action) {
             // Super admin can access all labs
             if ($this->hasRole('super_admin')) {
                 return Laboratorium::pluck('id')->toArray();
@@ -71,7 +72,8 @@ trait HasLabPermissions
             // For each lab, check if the user has the specific permission
             foreach ($laboratories as $lab) {
                 $labSlug = strtolower(str_replace([' ', '.'], ['_', '_'], $lab->ruang));
-                $permissionName = "lab_{$action}_{$labSlug}";
+                // Format: lab_{slug}_{action}
+                $permissionName = "lab_{$labSlug}_{$action}";
 
                 // If the user has this permission (through any role), add the lab
                 if (in_array($permissionName, $userPermissions)) {

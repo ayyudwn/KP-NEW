@@ -65,15 +65,27 @@ class Inventory extends Model
             $laboratorium = Laboratorium::find($inventory->laboratorium_id);
             $namaLab = $laboratorium ? strtoupper($laboratorium->ruang) : 'LAB';
 
+            // Helper function to get last number from kode_inventaris
+            $getLastNumber = function ($query) {
+                $last = $query->orderByRaw("CAST(SUBSTRING_INDEX(kode_inventaris, '/', -1) AS UNSIGNED) DESC")
+                    ->first();
+
+                if ($last && $last->kode_inventaris) {
+                    $parts = explode('/', $last->kode_inventaris);
+                    return (int) end($parts);
+                }
+                return 0;
+            };
+
             // Generate nomor inventaris untuk PCDetail
             if ($inventory->inventoriable_type === 'App\Models\PCDetail') {
-                // Hitung nomor urut PC untuk lab ini (hanya yang sudah tersimpan)
-                $existingPCs = self::where('laboratorium_id', $inventory->laboratorium_id)
-                    ->where('inventoriable_type', 'App\Models\PCDetail')
-                    ->whereNotNull('kode_inventaris')
-                    ->count();
+                $lastNumber = $getLastNumber(
+                    self::where('laboratorium_id', $inventory->laboratorium_id)
+                        ->where('inventoriable_type', 'App\Models\PCDetail')
+                        ->whereNotNull('kode_inventaris')
+                );
 
-                $nomorUrut = str_pad($existingPCs + 1, 2, '0', STR_PAD_LEFT);
+                $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                 // Format: UDN/LABKOM/INV/namalab/PC01
                 $inventory->kode_inventaris = "UDN/LABKOM/INV/{$namaLab}/PC{$nomorUrut}";
@@ -81,13 +93,13 @@ class Inventory extends Model
 
             // Generate nomor inventaris untuk NonPCDetail
             if ($inventory->inventoriable_type === 'App\Models\NonPCDetail') {
-                // Hitung nomor urut Non-PC untuk lab ini (hanya yang sudah tersimpan)
-                $existingNonPCs = self::where('laboratorium_id', $inventory->laboratorium_id)
-                    ->where('inventoriable_type', 'App\Models\NonPCDetail')
-                    ->whereNotNull('kode_inventaris')
-                    ->count();
+                $lastNumber = $getLastNumber(
+                    self::where('laboratorium_id', $inventory->laboratorium_id)
+                        ->where('inventoriable_type', 'App\Models\NonPCDetail')
+                        ->whereNotNull('kode_inventaris')
+                );
 
-                $nomorUrut = str_pad($existingNonPCs + 1, 2, '0', STR_PAD_LEFT);
+                $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                 // Format: UDN/LABKOM/INV/NON-PC/namalab/01
                 $inventory->kode_inventaris = "UDN/LABKOM/INV/NON-PC/{$namaLab}/{$nomorUrut}";
@@ -95,13 +107,13 @@ class Inventory extends Model
 
             // Generate nomor inventaris untuk SoftwareDetail
             if ($inventory->inventoriable_type === 'App\Models\SoftwareDetail') {
-                // Hitung nomor urut Software untuk lab ini (hanya yang sudah tersimpan)
-                $existingSoftware = self::where('laboratorium_id', $inventory->laboratorium_id)
-                    ->where('inventoriable_type', 'App\Models\SoftwareDetail')
-                    ->whereNotNull('kode_inventaris')
-                    ->count();
+                $lastNumber = $getLastNumber(
+                    self::where('laboratorium_id', $inventory->laboratorium_id)
+                        ->where('inventoriable_type', 'App\Models\SoftwareDetail')
+                        ->whereNotNull('kode_inventaris')
+                );
 
-                $nomorUrut = str_pad($existingSoftware + 1, 2, '0', STR_PAD_LEFT);
+                $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                 // Format: UDN/LABKOM/INV/SOFTWARE/namalab/01
                 $inventory->kode_inventaris = "UDN/LABKOM/INV/SOFTWARE/{$namaLab}/{$nomorUrut}";

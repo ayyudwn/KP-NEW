@@ -40,6 +40,34 @@ class Laboratorium extends Model
      */
     protected static function booted()
     {
+        // Auto-create permissions when a new lab is created
+        static::created(function (Laboratorium $lab) {
+            $labSlug = strtolower(str_replace([' ', '.'], ['_', '_'], $lab->ruang));
+            $actions = ['view', 'manage', 'edit', 'delete'];
+
+            foreach ($actions as $action) {
+                // Format: lab_{slug}_{action} - groups by lab in Shield
+                \Spatie\Permission\Models\Permission::firstOrCreate([
+                    'name' => "lab_{$labSlug}_{$action}",
+                    'guard_name' => 'web',
+                ]);
+            }
+
+            // Clear permission cache
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        });
+
+        // Auto-delete permissions when a lab is deleted
+        static::deleting(function (Laboratorium $lab) {
+            $labSlug = strtolower(str_replace([' ', '.'], ['_', '_'], $lab->ruang));
+
+            // Delete all permissions for this lab (format: lab_{slug}_*)
+            \Spatie\Permission\Models\Permission::where('name', 'like', "lab_{$labSlug}_%")->delete();
+
+            // Clear permission cache
+            app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        });
+
         // Temporarily commenting out the global scope to debug 500 error
         /*
         static::addGlobalScope('lab-permissions', function (Builder $builder) {

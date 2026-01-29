@@ -28,6 +28,22 @@ class BarangKeluarResource extends Resource
 
     protected static ?string $slug = 'barang-keluar';
 
+    protected static bool $shouldRegisterNavigation = false;
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        // Filter by user's authorized labs
+        $user = auth()->user();
+        if ($user && !$user->hasRole('super_admin')) {
+            $authorizedLabIds = $user->getAuthorizedLabIds('view');
+            $query->whereIn('laboratorium_id', $authorizedLabIds);
+        }
+
+        return $query;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -36,7 +52,13 @@ class BarangKeluarResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('laboratorium_id')
                             ->label('Laboratorium')
-                            ->options(Laboratorium::all()->pluck('ruang', 'id'))
+                            ->options(function () {
+                                $user = auth()->user();
+                                if ($user->hasRole('super_admin')) {
+                                    return Laboratorium::pluck('ruang', 'id');
+                                }
+                                return Laboratorium::whereIn('id', $user->getAuthorizedLabIds('view'))->pluck('ruang', 'id');
+                            })
                             ->searchable()
                             ->required()
                             ->live()
@@ -56,12 +78,19 @@ class BarangKeluarResource extends Resource
                                     $laboratorium = \App\Models\Laboratorium::find($state);
                                     $namaLab = $laboratorium ? strtoupper($laboratorium->ruang) : 'LAB';
 
-                                    // Hitung nomor urut barang keluar untuk lab ini
-                                    $existingCount = \App\Models\BarangKeluar::where('laboratorium_id', $state)
+                                    // Cari nomor urut tertinggi yang pernah digunakan untuk lab ini
+                                    $lastRecord = \App\Models\BarangKeluar::where('laboratorium_id', $state)
                                         ->whereNotNull('no_inventaris')
-                                        ->count();
+                                        ->orderByRaw("CAST(SUBSTRING_INDEX(no_inventaris, '/', -1) AS UNSIGNED) DESC")
+                                        ->first();
 
-                                    $nomorUrut = str_pad($existingCount + 1, 3, '0', STR_PAD_LEFT);
+                                    $lastNumber = 0;
+                                    if ($lastRecord && $lastRecord->no_inventaris) {
+                                        $parts = explode('/', $lastRecord->no_inventaris);
+                                        $lastNumber = (int) end($parts);
+                                    }
+
+                                    $nomorUrut = str_pad($lastNumber + 1, 3, '0', STR_PAD_LEFT);
                                     $tahun = date('Y');
                                     $bulan = date('m');
 
@@ -141,7 +170,13 @@ class BarangKeluarResource extends Resource
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('laboratorium')
-                    ->relationship('laboratorium', 'ruang')
+                    ->relationship(
+                        'laboratorium',
+                        'ruang',
+                        fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                        ? $query
+                        : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                    )
                     ->label('Laboratorium'),
             ])
             ->actions([
@@ -158,7 +193,7 @@ class BarangKeluarResource extends Resource
                     ->label('Export Excel')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
-                    ->action(fn ($livewire) => $livewire->exportToExcel())
+                    ->action(fn($livewire) => $livewire->exportToExcel())
             ]);
     }
 

@@ -30,7 +30,16 @@ class NonPCInventoryResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('inventoriable_type', NonPCDetail::class);
+        $query = parent::getEloquentQuery()->where('inventoriable_type', NonPCDetail::class);
+
+        // Filter by user's authorized labs
+        $user = auth()->user();
+        if ($user && !$user->hasRole('super_admin')) {
+            $authorizedLabIds = $user->getAuthorizedLabIds('view');
+            $query->whereIn('laboratorium_id', $authorizedLabIds);
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -41,7 +50,13 @@ class NonPCInventoryResource extends Resource
                     ->schema([
                         Select::make('laboratorium_id')
                             ->label('Laboratorium')
-                            ->relationship('laboratorium', 'ruang')
+                            ->relationship(
+                                'laboratorium',
+                                'ruang',
+                                fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                                ? $query
+                                : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                            )
                             ->required()
                             ->preload()
                             ->searchable()
@@ -79,13 +94,20 @@ class NonPCInventoryResource extends Resource
                                     $laboratorium = \App\Models\Laboratorium::find($state);
                                     $namaLab = $laboratorium ? strtoupper($laboratorium->ruang) : 'LAB';
 
-                                    // Hitung nomor urut Non-PC untuk lab ini
-                                    $existingNonPCs = \App\Models\Inventory::where('laboratorium_id', $state)
+                                    // Cari nomor urut tertinggi yang pernah digunakan untuk lab ini
+                                    $lastInventory = \App\Models\Inventory::where('laboratorium_id', $state)
                                         ->where('inventoriable_type', 'App\Models\NonPCDetail')
                                         ->whereNotNull('kode_inventaris')
-                                        ->count();
+                                        ->orderByRaw("CAST(SUBSTRING_INDEX(kode_inventaris, '/', -1) AS UNSIGNED) DESC")
+                                        ->first();
 
-                                    $nomorUrut = str_pad($existingNonPCs + 1, 2, '0', STR_PAD_LEFT);
+                                    $lastNumber = 0;
+                                    if ($lastInventory && $lastInventory->kode_inventaris) {
+                                        $parts = explode('/', $lastInventory->kode_inventaris);
+                                        $lastNumber = (int) end($parts);
+                                    }
+
+                                    $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                                     // Set nomor inventaris yang akan di-generate
                                     $set('preview_kode_inventaris', "UDN/LABKOM/INV/NPC/{$namaLab}/{$nomorUrut}");
@@ -150,7 +172,7 @@ class NonPCInventoryResource extends Resource
                 TextColumn::make('nama_barang')->searchable(),
                 TextColumn::make('inventoriable.merk')->label('Jumlah')->toggleable(),
                 TextColumn::make('laboratorium.ruang')->sortable()->badge(),
-                TextColumn::make('kondisi')->sortable()->badge()->color(fn (string $state): string => match ($state) {
+                TextColumn::make('kondisi')->sortable()->badge()->color(fn(string $state): string => match ($state) {
                     'Baik' => 'success',
                     'Rusak Ringan' => 'warning',
                     'Rusak Berat' => 'danger',
@@ -159,7 +181,13 @@ class NonPCInventoryResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('laboratorium')
-                    ->relationship('laboratorium', 'ruang')
+                    ->relationship(
+                        'laboratorium',
+                        'ruang',
+                        fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                        ? $query
+                        : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                    )
                     ->preload(),
             ])
             ->actions([
@@ -171,7 +199,7 @@ class NonPCInventoryResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()->before(function($records){
+                    Tables\Actions\DeleteBulkAction::make()->before(function ($records) {
                         $records->each(fn(Inventory $record) => $record->inventoriable?->delete());
                     }),
                 ]),
@@ -181,7 +209,7 @@ class NonPCInventoryResource extends Resource
                     ->label('Export Excel')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
-                    ->action(fn ($livewire) => $livewire->exportToExcel())
+                    ->action(fn($livewire) => $livewire->exportToExcel())
             ]);
     }
 

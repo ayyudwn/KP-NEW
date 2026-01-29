@@ -20,6 +20,10 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Tables\Actions\Action;
 use App\Models\Laboratorium;
+use Filament\Infolists\Components\Section as InfoSection;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\Grid as InfoGrid;
+use Filament\Infolists\Infolist;
 
 class PCInventoryResource extends Resource
 {
@@ -34,8 +38,16 @@ class PCInventoryResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        // Filter query agar hanya menampilkan inventaris dengan tipe PCDetail
-        return parent::getEloquentQuery()->where('inventoriable_type', PCDetail::class);
+        $query = parent::getEloquentQuery()->where('inventoriable_type', PCDetail::class);
+
+        // Filter by user's authorized labs
+        $user = auth()->user();
+        if ($user && !$user->hasRole('super_admin')) {
+            $authorizedLabIds = $user->getAuthorizedLabIds('view');
+            $query->whereIn('laboratorium_id', $authorizedLabIds);
+        }
+
+        return $query;
     }
 
     public static function form(Form $form): Form
@@ -49,9 +61,9 @@ class PCInventoryResource extends Resource
                             ->relationship(
                                 'laboratorium',
                                 'ruang',
-                                fn (Builder $query) => auth()->user()->hasRole('super_admin')
-                                    ? $query
-                                    : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                                fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                                ? $query
+                                : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
                             )
                             ->required()
                             ->preload()
@@ -90,13 +102,20 @@ class PCInventoryResource extends Resource
                                     $laboratorium = \App\Models\Laboratorium::find($state);
                                     $namaLab = $laboratorium ? strtoupper($laboratorium->ruang) : 'LAB';
 
-                                    // Hitung nomor urut PC untuk lab ini
-                                    $existingPCs = \App\Models\Inventory::where('laboratorium_id', $state)
+                                    // Cari nomor urut tertinggi yang pernah digunakan untuk lab ini
+                                    $lastInventory = \App\Models\Inventory::where('laboratorium_id', $state)
                                         ->where('inventoriable_type', 'App\Models\PCDetail')
                                         ->whereNotNull('kode_inventaris')
-                                        ->count();
+                                        ->orderByRaw("CAST(SUBSTRING_INDEX(kode_inventaris, '/', -1) AS UNSIGNED) DESC")
+                                        ->first();
 
-                                    $nomorUrut = str_pad($existingPCs + 1, 2, '0', STR_PAD_LEFT);
+                                    $lastNumber = 0;
+                                    if ($lastInventory && $lastInventory->kode_inventaris) {
+                                        $parts = explode('/', $lastInventory->kode_inventaris);
+                                        $lastNumber = (int) end($parts);
+                                    }
+
+                                    $nomorUrut = str_pad($lastNumber + 1, 2, '0', STR_PAD_LEFT);
 
                                     // Set nomor inventaris yang akan di-generate
                                     $set('preview_kode_inventaris', "UDN/LABKOM/INV/PC/{$namaLab}/{$nomorUrut}");
@@ -283,14 +302,16 @@ class PCInventoryResource extends Resource
                     ->relationship(
                         'laboratorium',
                         'ruang',
-                        fn (Builder $query) => auth()->user()->hasRole('super_admin')
-                            ? $query
-                            : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
+                        fn(Builder $query) => auth()->user()->hasRole('super_admin')
+                        ? $query
+                        : $query->whereIn('id', auth()->user()->getAuthorizedLabIds('view'))
                     )
                     ->preload(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->modalHeading('Lihat Inventaris PC')
+                    ->infolist(fn(Infolist $infolist): Infolist => static::infolist($infolist)),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
                     ->before(function (Inventory $record) {
@@ -315,7 +336,75 @@ class PCInventoryResource extends Resource
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('success')
                     // Arahkan action untuk memanggil metode 'exportToExcel' di Livewire Component (List Page)
-                    ->action(fn ($livewire) => $livewire->exportToExcel())
+                    ->action(fn($livewire) => $livewire->exportToExcel())
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                InfoSection::make('Informasi Umum PC')
+                    ->schema([
+                        TextEntry::make('laboratorium.ruang')
+                            ->label('Laboratorium')
+                            ->badge(),
+                        TextEntry::make('kode_inventaris')
+                            ->label('No Inventaris'),
+                        TextEntry::make('tanggal_pengadaan')
+                            ->label('Tanggal Pengadaan')
+                            ->date('d M Y')
+                            ->placeholder('-'),
+                        TextEntry::make('kondisi')
+                            ->badge()
+                            ->color(fn(string $state): string => match ($state) {
+                                'Baik' => 'success',
+                                'Rusak Ringan' => 'warning',
+                                'Rusak Berat' => 'danger',
+                                'Dalam Perbaikan' => 'info',
+                                default => 'gray',
+                            }),
+                    ])->columns(2),
+
+                InfoSection::make('Spesifikasi Komponen PC')
+                    ->description('Detail komponen hardware yang terpasang.')
+                    ->schema([
+                        InfoGrid::make(3)->schema([
+                            TextEntry::make('inventoriable.processor.full_name')
+                                ->label('Processor')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.motherboard.full_name')
+                                ->label('Motherboard')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.ram.full_name')
+                                ->label('RAM')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.penyimpanan.full_name')
+                                ->label('Penyimpanan')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.vga.full_name')
+                                ->label('VGA')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.psu.full_name')
+                                ->label('PSU')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.keyboard.full_name')
+                                ->label('Keyboard')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.mouse.full_name')
+                                ->label('Mouse')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.monitor.full_name')
+                                ->label('Monitor')
+                                ->placeholder('-'),
+                            TextEntry::make('inventoriable.dvd.full_name')
+                                ->label('DVD')
+                                ->placeholder('Tidak ada'),
+                            TextEntry::make('inventoriable.headphone.full_name')
+                                ->label('Headphone')
+                                ->placeholder('Tidak ada'),
+                        ]),
+                    ]),
             ]);
     }
 
