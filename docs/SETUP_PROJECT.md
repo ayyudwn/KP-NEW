@@ -59,20 +59,22 @@ php artisan migrate
 
 ---
 
-## 5. Setup Filament Shield (Roles & Permissions)
+## 5. Setup Roles & Permissions (PENTING!)
+
+> ⚠️ **JANGAN modifikasi folder `vendor/`!** Semua konfigurasi sudah di-publish ke `config/filament-shield.php`
 
 ```bash
-# Install shield
-php artisan shield:install
+# Seed roles dan permissions terlebih dahulu
+php artisan db:seed --class=RolePermissionSeeder
 
-# Generate permissions untuk semua resources
-php artisan shield:generate --all
-
-# Buat super admin
-php artisan shield:super-admin
+# Seed super admin user
+php artisan db:seed --class=UserSeeder
 ```
 
-Saat diminta, masukkan email/password untuk super admin.
+**Login Credentials:**
+| Email | Password | Role |
+|-------|----------|------|
+| superadmin@mail.com | superadmin | super_admin |
 
 ---
 
@@ -81,25 +83,35 @@ Saat diminta, masukkan email/password untuk super admin.
 **URUTAN PENTING!** Jalankan seeder sesuai urutan berikut:
 
 ```bash
-# 1. Data dasar (jika belum ada)
+# 1. Roles & User (HARUS PERTAMA)
+php artisan db:seed --class=RolePermissionSeeder
+php artisan db:seed --class=UserSeeder
+
+# 2. Data dasar
 php artisan db:seed --class=ProdiSeeder          # Program Studi
 php artisan db:seed --class=LaboratoriumSeeder   # Data Lab
 
-# 2. Data Software
+# 3. Data Software
 php artisan db:seed --class=SoftwareDetailSeeder # Master software (41 items)
 
-# 3. Data Mata Kuliah
+# 4. Data Mata Kuliah
 php artisan db:seed --class=CourseSeeder         # 34 mata kuliah
 
-# 4. Relasi Course-Software
+# 5. Relasi Course-Software
 php artisan db:seed --class=CourseSoftwareSeeder # Link matkul ke software
 
-# 5. Relasi Lab-Software (inventaris + pivot)
+# 6. Relasi Lab-Software (inventaris + pivot)
 php artisan db:seed --class=LabSoftwareSeeder    # 190 inventaris + pivot data
 
-# 6. Data tambahan (opsional)
+# 7. Data tambahan (opsional)
 php artisan db:seed --class=TimeSlotSeeder       # Slot waktu
 php artisan db:seed --class=ScheduleSeeder       # Jadwal contoh
+```
+
+### Atau jalankan semua sekaligus:
+
+```bash
+php artisan migrate:fresh --seed
 ```
 
 ---

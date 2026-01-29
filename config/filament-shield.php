@@ -56,7 +56,7 @@ return [
         'pages' => true,
         'widgets' => true,
         'resources' => true,
-        'custom_permissions' => true, // Change this from false to true
+        'custom_permissions' => false,
     ],
 
     'generator' => [

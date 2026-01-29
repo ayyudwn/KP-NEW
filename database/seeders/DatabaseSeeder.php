@@ -21,6 +21,12 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        // 1. FIRST: Seed roles and permissions
+        $this->call([
+            RolePermissionSeeder::class,
+            UserSeeder::class,
+        ]);
+
         $tahunSekarang = date('Y');
 
         Headphone::insert([
@@ -320,7 +326,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Corsair',
                 'tipe' => 'DDR4',
                 'kapasitas' => 16, // 2x8GB kit
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(8, 20),
             ],
@@ -329,7 +335,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Crucial',
                 'tipe' => 'DDR3', // Older systems
                 'kapasitas' => 4,
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(5, 15),
             ],
@@ -347,7 +353,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ADATA',
                 'tipe' => 'DDR4',
                 'kapasitas' => 16,
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(8, 18),
             ],
@@ -356,7 +362,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Team Group',
                 'tipe' => 'DDR4',
                 'kapasitas' => 8,
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(10, 28),
             ],
@@ -374,7 +380,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Patriot',
                 'tipe' => 'DDR3', // Older systems
                 'kapasitas' => 8, // 2x4GB
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(5, 12),
             ],
@@ -383,7 +389,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Apacer',
                 'tipe' => 'DDR4',
                 'kapasitas' => 4,
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(10, 20),
             ],
@@ -614,7 +620,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'HDD',
                 'kapasitas' => 1000, // 1TB
                 'spesifikasi' => 'SATA 7200RPM, Barracuda',
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(8, 20),
             ],
@@ -624,7 +630,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'SSD',
                 'kapasitas' => 480, // GB
                 'spesifikasi' => 'SATA III, Green Series',
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(7, 18),
             ],
@@ -644,7 +650,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'SSD',
                 'kapasitas' => 256, // GB
                 'spesifikasi' => 'NVMe Gen3, P2 Series',
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(6, 15),
             ],
@@ -654,7 +660,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'HDD',
                 'kapasitas' => 1000, // 1TB
                 'spesifikasi' => 'SATA 5400RPM, Blue Series',
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(8, 18),
             ],
@@ -674,7 +680,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'HDD',
                 'kapasitas' => 2000, // 2TB
                 'spesifikasi' => 'SATA 5400RPM, SkyHawk Lite (for surveillance, but can be general)',
-                'tahun' => $tahunSekarang -1,
+                'tahun' => $tahunSekarang - 1,
                 'bulan' => rand(1, 12),
                 'stok' => rand(5, 12),
             ],
@@ -684,7 +690,7 @@ class DatabaseSeeder extends Seeder
                 'tipe' => 'SSD',
                 'kapasitas' => 128, // GB
                 'spesifikasi' => 'SATA III, Platinum',
-                'tahun' => $tahunSekarang -2,
+                'tahun' => $tahunSekarang - 2,
                 'bulan' => rand(1, 12),
                 'stok' => rand(10, 20),
             ],
@@ -707,7 +713,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ASUS',
                 'tipe' => 'PRIME H510M-E',
                 'tahun' => $tahunSekarang,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(5, 15),
             ],
             [
@@ -715,7 +721,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'MSI',
                 'tipe' => 'A320M-A PRO MAX',
                 'tahun' => $tahunSekarang - 1,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(5, 15),
             ],
             [
@@ -723,7 +729,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Gigabyte',
                 'tipe' => 'GA-H410M H V2',
                 'tahun' => $tahunSekarang - 2,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(8, 18),
             ],
             [
@@ -731,7 +737,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ASRock',
                 'tipe' => 'B450M Steel Legend',
                 'tahun' => $tahunSekarang,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(4, 12),
             ],
             [
@@ -739,7 +745,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Biostar',
                 'tipe' => 'A520MH',
                 'tahun' => $tahunSekarang - 1,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(6, 16),
             ],
             [
@@ -747,7 +753,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ECS', // Elitegroup Computer Systems
                 'tipe' => 'H310CH5-M2',
                 'tahun' => $tahunSekarang - 2,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(5, 12),
             ],
             [
@@ -755,7 +761,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ASUS',
                 'tipe' => 'PRIME A320M-K',
                 'tahun' => $tahunSekarang,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(7, 17),
             ],
             [
@@ -763,7 +769,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'MSI',
                 'tipe' => 'H510M PRO-E',
                 'tahun' => $tahunSekarang - 1,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(6, 14),
             ],
             [
@@ -771,7 +777,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'Gigabyte',
                 'tipe' => 'B450M DS3H',
                 'tahun' => $tahunSekarang - 2,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(5, 13),
             ],
             [
@@ -779,7 +785,7 @@ class DatabaseSeeder extends Seeder
                 'merk' => 'ASRock',
                 'tipe' => 'H470M-HDV/M.2',
                 'tahun' => $tahunSekarang,
-                'bulan' => rand(1,12),
+                'bulan' => rand(1, 12),
                 'stok' => rand(4, 10),
             ],
         ]);
