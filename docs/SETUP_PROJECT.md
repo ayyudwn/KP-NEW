@@ -63,13 +63,33 @@ php artisan migrate
 
 > ⚠️ **JANGAN modifikasi folder `vendor/`!** Semua konfigurasi sudah di-publish ke `config/filament-shield.php`
 
+### Step 1: Seed Role & User
+
 ```bash
-# Seed roles dan permissions terlebih dahulu
+# Buat role super_admin
 php artisan db:seed --class=RolePermissionSeeder
 
-# Seed super admin user
+# Buat user super admin
 php artisan db:seed --class=UserSeeder
 ```
+
+### Step 2: Generate Permissions dengan Filament Shield
+
+```bash
+# Generate semua permission untuk resources dan pages
+php artisan shield:generate --all --panel=admin
+```
+
+### Step 3: Konfigurasi Lab Permissions
+
+Lab permissions (`lab_{slug}_view`, `lab_{slug}_manage`, dll) di-generate **otomatis** oleh `LabPermissionServiceProvider` saat aplikasi dijalankan.
+
+Untuk assign permission lab ke role:
+
+1. Login sebagai super admin
+2. Buka `/admin/shield/roles`
+3. Buat atau edit role
+4. Centang permission lab yang sesuai (contoh: `lab_d2a_view`, `lab_d2a_manage`)
 
 **Login Credentials:**
 | Email | Password | Role |
@@ -106,12 +126,16 @@ php artisan db:seed --class=LabSoftwareSeeder    # 190 inventaris + pivot data
 # 7. Data tambahan (opsional)
 php artisan db:seed --class=TimeSlotSeeder       # Slot waktu
 php artisan db:seed --class=ScheduleSeeder       # Jadwal contoh
+
+# 8. Generate permissions (PENTING!)
+php artisan shield:generate --all --panel=admin
 ```
 
 ### Atau jalankan semua sekaligus:
 
 ```bash
 php artisan migrate:fresh --seed
+php artisan shield:generate --all --panel=admin
 ```
 
 ---
@@ -130,10 +154,27 @@ Akses aplikasi di: `http://localhost:8000/admin`
 
 ---
 
+## Arsitektur Permission
+
+### Resource Permissions (Filament Shield)
+
+- Format: `view_any_{resource}`, `view_{resource}`, `create_{resource}`, dll
+- Di-generate oleh: `php artisan shield:generate --all`
+
+### Lab Permissions (Custom)
+
+- Format: `lab_{slug}_{action}` (contoh: `lab_d2a_view`, `lab_d2c_manage`)
+- Di-generate oleh: `LabPermissionServiceProvider` saat app boot
+- Actions: `view`, `manage`, `edit`, `delete`
+
+---
+
 ## Seeder Summary
 
 | Seeder                 | Deskripsi            | Jumlah Data            |
 | ---------------------- | -------------------- | ---------------------- |
+| `RolePermissionSeeder` | Role super_admin     | 1 role                 |
+| `UserSeeder`           | User super admin     | 1 user                 |
 | `SoftwareDetailSeeder` | Master software      | 41 software            |
 | `CourseSeeder`         | Mata kuliah          | 34 matkul              |
 | `CourseSoftwareSeeder` | Link matkul-software | 26 matkul linked       |
@@ -158,8 +199,22 @@ php artisan migrate:fresh  # HATI-HATI: Hapus semua data!
 ### Shield tidak generate permission
 
 ```bash
-php artisan shield:generate --all --option=permissions
+php artisan shield:generate --all --panel=admin
 ```
+
+### Lab permissions tidak muncul
+
+Lab permissions di-generate saat aplikasi dijalankan. Pastikan:
+
+1. Tabel `laboratoria` sudah ada dan berisi data
+2. `LabPermissionServiceProvider` terdaftar di `config/app.php`
+3. Clear cache: `php artisan optimize:clear`
+
+### User tidak bisa akses lab
+
+1. Buka `/admin/shield/roles`
+2. Edit role user tersebut
+3. Centang permission lab yang diperlukan (contoh: `lab_d2a_view`)
 
 ---
 
