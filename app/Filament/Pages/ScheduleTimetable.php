@@ -60,65 +60,35 @@ class ScheduleTimetable extends Page implements HasActions
 
     /**
      * Menghasilkan array slot waktu per 50 menit dari 07:00 hingga 21:00
-     * (skipping break times: 12:00-12:30, 15:50-16:20, 18:00-18:30)
+     * Break sore dinamis: jika ada jadwal 3+ SKS siang di lab ini, break digeser ke 15:00-15:30
      */
     public function getTimeSlots(): array
     {
-        $slots = [];
-        $current = Carbon::createFromTime(7, 0);
-        $maxEnd = Carbon::createFromTime(21, 0);
+        $breaks = $this->getBreaksForCurrentLab();
+        return \App\Services\SchedulingService::generateTimeSlots($breaks);
+    }
 
-        // Break times
-        $breaks = [
-            ['start' => '12:00', 'end' => '12:30'],
-            ['start' => '15:50', 'end' => '16:20'],
-            ['start' => '18:00', 'end' => '18:30'],
-        ];
-
-        while ($current->lt($maxEnd)) {
-            $slotEnd = $current->copy()->addMinutes(50);
-
-            if ($slotEnd->gt($maxEnd)) {
-                break;
-            }
-
-            $insideBreak = false;
-            foreach ($breaks as $break) {
-                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
-                $breakEnd = Carbon::createFromFormat('H:i', $break['end']);
-
-                if ($current->gte($breakStart) && $current->lt($breakEnd)) {
-                    $current = $breakEnd->copy();
-                    $insideBreak = true;
-                    break;
-                }
-            }
-
-            if ($insideBreak) {
-                continue;
-            }
-
-            $crossesBreak = false;
-            foreach ($breaks as $break) {
-                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
-
-                if ($current->lt($breakStart) && $slotEnd->gt($breakStart)) {
-                    $slots[] = $current->format('H:i');
-                    $current = Carbon::createFromFormat('H:i', $break['end']);
-                    $crossesBreak = true;
-                    break;
-                }
-            }
-
-            if ($crossesBreak) {
-                continue;
-            }
-
-            $slots[] = $current->format('H:i');
-            $current->addMinutes(50);
+    /**
+     * Determine break times based on whether any 3+ SKS siang schedule exists in current lab
+     */
+    protected function getBreaksForCurrentLab(): array
+    {
+        if (!$this->selectedLabId) {
+            return \App\Services\SchedulingService::DEFAULT_BREAKS;
         }
 
-        return $slots;
+        // Check if any schedule in this lab has a 3+ SKS siang course
+        $has3SksSiang = Schedule::where('laboratorium_id', $this->selectedLabId)
+            ->whereHas('course', function ($q) {
+                $q->where('sks', '>=', 3);
+            })
+            ->where('sesi', 'siang')
+            ->exists();
+
+        return \App\Services\SchedulingService::getBreakTimes(
+            $has3SksSiang ? 3 : 2,
+            $has3SksSiang ? 'siang' : null
+        );
     }
 
     /**

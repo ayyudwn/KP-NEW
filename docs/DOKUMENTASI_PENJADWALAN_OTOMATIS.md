@@ -121,17 +121,25 @@ flowchart TD
 ```
 Durasi per slot: 50 menit (1 SKS = 1 slot)
 
-Break Times:
+Default Break Times (2 SKS):
 ├── 12:00 - 12:30 (Istirahat Siang)
 ├── 15:50 - 16:20 (Istirahat Sore)
 └── 18:00 - 18:30 (Istirahat Malam)
 
+Dynamic Break Times (3+ SKS Siang):
+├── 12:00 - 12:30 (Istirahat Siang)
+├── 15:00 - 15:30 (Istirahat Sore ← digeser dari 15:50)
+└── 18:00 - 18:30 (Istirahat Malam)
+
 Session Ranges:
 ├── Pagi:  07:00 - 12:00 (5 slots)
-├── Siang: 12:30 - 15:50 (4 slots)
+├── Siang: 12:30 - 15:50 (4 slots, + slot 15:30 untuk 3 SKS)
 ├── Sore:  16:20 - 18:00 (2 slots)
 └── Malam: 18:30 - 21:00 (3 slots)
 ```
+
+> **Catatan:** Untuk penjelasan lengkap kasus 3 SKS siang, lihat
+> [docs/DYNAMIC_BREAK_3SKS.md](DYNAMIC_BREAK_3SKS.md)
 
 ---
 
@@ -268,25 +276,34 @@ $filteredSlots = $availableSlots->filter(function ($slot) use ($sessionRange) {
 
 ---
 
-### 3.5 Filter Break Times
+### 3.5 Filter Break Times (Dynamic)
 
-**File:** `app/Filament/Pages/ScheduleWizard.php` (line 299-326)
+**File:** `app/Services/SchedulingService.php`
+
+Break times sekarang **dinamis** berdasarkan SKS dan sesi. Untuk 3+ SKS siang, break sore digeser dari 15:50-16:20 ke **15:00-15:30**.
 
 ```php
-$breakTimes = [
-    ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
-    ['start' => '15:50', 'end' => '16:20'], // Istirahat sore
-    ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
-];
+// Centralized dynamic break times
+public static function getBreakTimes(int $sks = 2, ?string $sesi = null): array
+{
+    if ($sks >= 3 && $sesi === 'siang') {
+        return self::BREAKS_3SKS_SIANG; // break sore: 15:00-15:30
+    }
+    return self::DEFAULT_BREAKS;         // break sore: 15:50-16:20
+}
+```
 
-// Filter out slots that overlap with break times
-$filteredSlots = $filteredSlots->filter(function ($slot) use ($breakTimes) {
+**Filter overlap di `getSlotOptionsForForm()`:**
+
+```php
+$breakTimes = self::getBreakTimes($slotsNeeded, 'siang');
+
+$slots = $slots->filter(function ($slot) use ($slotsNeeded, $breakTimes) {
     $slotStart = Carbon::parse($slot->start_time)->format('H:i');
-    $slotEnd = $this->calculateEndTime($slot, $course->sks);
+    $endTime = $this->calculateEndTime($slot, $slotsNeeded);
 
     foreach ($breakTimes as $break) {
-        // Slot overlaps if: starts before break ends AND ends after break starts
-        if ($slotStart < $break['end'] && $slotEnd > $break['start']) {
+        if ($slotStart < $break['end'] && $endTime > $break['start']) {
             return false;
         }
     }

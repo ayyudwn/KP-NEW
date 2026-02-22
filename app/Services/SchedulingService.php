@@ -22,6 +22,103 @@ use Illuminate\Support\Collection;
 class SchedulingService
 {
     /**
+     * Default break times (untuk 2 SKS atau non-siang)
+     */
+    public const DEFAULT_BREAKS = [
+        ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
+        ['start' => '15:50', 'end' => '16:20'], // Istirahat sore
+        ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
+    ];
+
+    /**
+     * Break times untuk 3+ SKS siang (break sore digeser)
+     */
+    public const BREAKS_3SKS_SIANG = [
+        ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
+        ['start' => '15:00', 'end' => '15:30'], // Istirahat sore (digeser dari 15:50)
+        ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
+    ];
+
+    /**
+     * Mendapatkan break times yang sesuai berdasarkan SKS dan sesi.
+     * Untuk 3+ SKS siang, break sore digeser ke 15:00-15:30.
+     *
+     * @param int $sks Jumlah SKS
+     * @param string|null $sesi Sesi waktu ('pagi', 'siang', 'malam')
+     * @return array Break times
+     */
+    public static function getBreakTimes(int $sks = 2, ?string $sesi = null): array
+    {
+        if ($sks >= 3 && $sesi === 'siang') {
+            return self::BREAKS_3SKS_SIANG;
+        }
+
+        return self::DEFAULT_BREAKS;
+    }
+
+    /**
+     * Generate array slot waktu per 50 menit dari 07:00 hingga 21:00
+     * dengan break times yang dinamis.
+     *
+     * @param array $breaks Break times to use
+     * @return array Slot times (format H:i)
+     */
+    public static function generateTimeSlots(array $breaks = []): array
+    {
+        if (empty($breaks)) {
+            $breaks = self::DEFAULT_BREAKS;
+        }
+
+        $slots = [];
+        $current = Carbon::createFromTime(7, 0);
+        $maxEnd = Carbon::createFromTime(21, 0);
+
+        while ($current->lt($maxEnd)) {
+            $slotEnd = $current->copy()->addMinutes(50);
+
+            if ($slotEnd->gt($maxEnd)) {
+                break;
+            }
+
+            $insideBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+                $breakEnd = Carbon::createFromFormat('H:i', $break['end']);
+
+                if ($current->gte($breakStart) && $current->lt($breakEnd)) {
+                    $current = $breakEnd->copy();
+                    $insideBreak = true;
+                    break;
+                }
+            }
+
+            if ($insideBreak) {
+                continue;
+            }
+
+            $crossesBreak = false;
+            foreach ($breaks as $break) {
+                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
+
+                if ($current->lt($breakStart) && $slotEnd->gt($breakStart)) {
+                    $slots[] = $current->format('H:i');
+                    $current = Carbon::createFromFormat('H:i', $break['end']);
+                    $crossesBreak = true;
+                    break;
+                }
+            }
+
+            if ($crossesBreak) {
+                continue;
+            }
+
+            $slots[] = $current->format('H:i');
+            $current->addMinutes(50);
+        }
+
+        return $slots;
+    }
+    /**
      * Mendapatkan daftar lab yang tersedia untuk suatu mata kuliah
      * Filter berdasarkan: software requirements + kapasitas
      *
@@ -316,12 +413,11 @@ class SchedulingService
     ): array {
         $slots = $this->getAvailableSlots($lab, $day, $slotsNeeded, $excludeScheduleId);
 
-        // Filter break times logic
-        $breakTimes = [
-            ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
-            ['start' => '15:50', 'end' => '16:20'], // Istirahat sore
-            ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
-        ];
+        // Use dynamic breaks based on SKS.
+        // For 3+ SKS siang, break sore shifts to 15:00-15:30 (from 15:50-16:20).
+        // This allows a 15:30 start time to be valid (15:30+150min=18:00, no break crossing).
+        // The sesi is determined per-slot based on start time.
+        $breakTimes = self::getBreakTimes($slotsNeeded, 'siang');
         $maxEndTime = '21:00';
 
         $slots = $slots->filter(function ($slot) use ($slotsNeeded, $breakTimes, $maxEndTime) {

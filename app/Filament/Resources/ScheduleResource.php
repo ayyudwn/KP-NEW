@@ -345,13 +345,13 @@ class ScheduleResource extends Resource
                                 }
 
                                 $service = app(SchedulingService::class);
-                                $slots = $service->getAvailableSlots($lab, $day, $course->sks, $record?->id);
+                                $filteredOptions = $service->getSlotOptionsForForm($lab, $day, $course->sks, $record?->id);
 
-                                if ($slots->isEmpty()) {
+                                if (empty($filteredOptions)) {
                                     return "⚠️ Tidak ada slot {$course->sks} jam berturutan yang tersedia pada hari {$day}";
                                 }
 
-                                return "✓ {$slots->count()} slot tersedia (durasi: {$course->sks} x 50 menit)";
+                                return "✓ " . count($filteredOptions) . " slot tersedia (durasi: {$course->sks} x 50 menit)";
                             }),
 
                         Forms\Components\Placeholder::make('calculated_end_time')

@@ -7,6 +7,7 @@ use App\Models\Laboratorium;
 use App\Models\Prodi;
 use App\Models\Schedule;
 use App\Models\TimeSlot;
+use App\Services\SchedulingService;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
@@ -40,6 +41,8 @@ class BulkScheduleImport implements ToCollection, WithHeadingRow
         '13:20',
         '14:10',
         '15:00',
+        // After shifted break for 3+ SKS siang (15:00-15:30)
+        '15:30',
         // Sore: 16:20 - 18:00 (2 slots × 50min)
         '16:20',
         '17:10',
@@ -203,12 +206,7 @@ class BulkScheduleImport implements ToCollection, WithHeadingRow
         $this->results[] = $result;
     }
 
-    // Break times that cannot be crossed
-    private array $breakTimes = [
-        '12:00', // Break siang
-        '15:50', // Break sore
-        '18:00', // Break malam
-    ];
+    // Break times are now dynamic via SchedulingService::getBreakTimes()
 
     // Track failure reason for current search
     private string $lastFailureReason = '';
@@ -235,7 +233,13 @@ class BulkScheduleImport implements ToCollection, WithHeadingRow
                 $endTime = $this->calculateEndTime($startTime, $durationMinutes);
 
                 // IMPORTANT: Check if end time crosses a break
-                if ($this->crossesBreak($startTime, $endTime)) {
+                // Determine sesi for dynamic break calculation
+                $startHour = (int) explode(':', $startTime)[0];
+                $startMin = (int) explode(':', $startTime)[1];
+                $startInMinutes = $startHour * 60 + $startMin;
+                $currentSesi = $startInMinutes < 12 * 60 + 30 ? 'pagi' : ($startInMinutes < 18 * 60 + 30 ? 'siang' : 'malam');
+
+                if ($this->crossesBreak($startTime, $endTime, $sks, $currentSesi)) {
                     $crossesBreakCount++;
                     continue; // Skip this slot, try next one
                 }
@@ -294,16 +298,19 @@ class BulkScheduleImport implements ToCollection, WithHeadingRow
 
     /**
      * Check if a time range crosses any break period
+     * Uses dynamic breaks based on SKS and sesi
      */
-    private function crossesBreak(string $startTime, string $endTime): bool
+    private function crossesBreak(string $startTime, string $endTime, int $sks = 2, string $sesi = 'pagi'): bool
     {
         $start = \Carbon\Carbon::createFromFormat('H:i', $startTime);
         $end = \Carbon\Carbon::createFromFormat('H:i', $endTime);
 
-        foreach ($this->breakTimes as $breakTime) {
-            $break = \Carbon\Carbon::createFromFormat('H:i', $breakTime);
-            // If break is between start and end (exclusive of start, inclusive of end)
-            if ($break->gt($start) && $break->lte($end)) {
+        $breakTimes = SchedulingService::getBreakTimes($sks, $sesi);
+
+        foreach ($breakTimes as $breakTime) {
+            $breakStart = \Carbon\Carbon::createFromFormat('H:i', $breakTime['start']);
+            // If break start is between start and end (exclusive of start, inclusive of end)
+            if ($breakStart->gt($start) && $breakStart->lte($end)) {
                 return true;
             }
         }

@@ -59,65 +59,27 @@ class LabScheduleSheet implements FromArray, WithTitle, WithStyles, WithColumnWi
 
     protected function getTimeSlots(): array
     {
-        $slots = [];
-        $current = Carbon::createFromTime(7, 0);
-        $maxEnd = Carbon::createFromTime(21, 0);
+        $breaks = $this->getBreaksForLab();
+        return \App\Services\SchedulingService::generateTimeSlots($breaks);
+    }
 
-        // Break times
-        $breaks = [
-            ['start' => '12:00', 'end' => '12:30'],
-            ['start' => '15:50', 'end' => '16:20'],
-            ['start' => '18:00', 'end' => '18:30'],
-        ];
+    /**
+     * Determine break times based on whether any 3+ SKS siang schedule exists in this lab
+     */
+    protected function getBreaksForLab(): array
+    {
+        // Check if any schedule in this lab has a 3+ SKS siang course
+        $has3SksSiang = Schedule::where('laboratorium_id', $this->lab->id)
+            ->whereHas('course', function ($q) {
+                $q->where('sks', '>=', 3);
+            })
+            ->where('sesi', 'siang')
+            ->exists();
 
-        while ($current->lt($maxEnd)) {
-            $slotEnd = $current->copy()->addMinutes(50);
-
-            // Check if slot would end after max time
-            if ($slotEnd->gt($maxEnd)) {
-                break;
-            }
-
-            // Check if current position is inside a break - if so, skip to break end
-            $insideBreak = false;
-            foreach ($breaks as $break) {
-                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
-                $breakEnd = Carbon::createFromFormat('H:i', $break['end']);
-
-                if ($current->gte($breakStart) && $current->lt($breakEnd)) {
-                    $current = $breakEnd->copy();
-                    $insideBreak = true;
-                    break;
-                }
-            }
-
-            if ($insideBreak) {
-                continue;
-            }
-
-            // Check if slot would cross into a break
-            $crossesBreak = false;
-            foreach ($breaks as $break) {
-                $breakStart = Carbon::createFromFormat('H:i', $break['start']);
-
-                if ($current->lt($breakStart) && $slotEnd->gt($breakStart)) {
-                    $slots[] = $current->format('H:i');
-                    $current = Carbon::createFromFormat('H:i', $break['end']);
-                    $crossesBreak = true;
-                    break;
-                }
-            }
-
-            if ($crossesBreak) {
-                continue;
-            }
-
-            // Normal slot
-            $slots[] = $current->format('H:i');
-            $current->addMinutes(50);
-        }
-
-        return $slots;
+        return \App\Services\SchedulingService::getBreakTimes(
+            $has3SksSiang ? 3 : 2,
+            $has3SksSiang ? 'siang' : null
+        );
     }
 
     public function array(): array

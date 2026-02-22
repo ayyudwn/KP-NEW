@@ -296,12 +296,8 @@ class ScheduleWizard extends Page implements HasForms
                     return $slotStartTime >= $sessionRange['start'] && $slotStartTime < $sessionRange['end'];
                 });
 
-                // Define break times to exclude
-                $breakTimes = [
-                    ['start' => '12:00', 'end' => '12:30'], // Istirahat siang
-                    ['start' => '15:50', 'end' => '16:20'], // Istirahat sore
-                    ['start' => '18:00', 'end' => '18:30'], // Istirahat malam
-                ];
+                // Use dynamic breaks based on SKS + sesi
+                $breakTimes = SchedulingService::getBreakTimes($course->sks, $sesi);
                 $maxEndTime = '21:00';
 
                 // Filter out slots that overlap with break times or exceed max end time
