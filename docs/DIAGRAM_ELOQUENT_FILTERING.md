@@ -467,3 +467,397 @@ flowchart TD
 1. **Forward Checking** — Setiap constraint langsung mengeliminasi kandidat yang tidak valid (Eloquent `where` dan Collection `filter`)
 2. **Constraint Propagation** — Step 1-6 berurutan, output satu step menjadi input step berikutnya
 3. **Heuristic Ordering** — SKS tinggi diproses duluan (pada bulk import), lab priority didahulukan
+
+---
+
+---
+
+# Metode 2: Bulk Import Excel (Penjadwalan Otomatis Massal)
+
+> **File utama:** `app/Imports/BulkScheduleImport.php`
+
+Selain input satuan (Metode 1 di atas), sistem juga mendukung **import massal via Excel**. Pengguna mengunggah file Excel berisi permintaan matakuliah beserta jumlah kelas yang dibutuhkan, dan sistem **otomatis memplot seluruh jadwal** ke lab dan slot yang tersedia.
+
+## Input Excel
+
+| Kolom     | Deskripsi               | Contoh           |
+| --------- | ----------------------- | ---------------- |
+| `prodi`   | Kode program studi      | A11              |
+| `kdmk`    | Kode mata kuliah        | A11.64710        |
+| `nama_mk` | Nama mata kuliah        | Pemrograman Game |
+| `sks`     | Jumlah SKS              | 3                |
+| `pagi`    | Jumlah kelas pagi/siang | 2                |
+| `malam`   | Jumlah kelas malam      | 1                |
+
+Dari satu baris ini, sistem menghasilkan **3 jadwal** (2 pagi + 1 malam) yang masing-masing harus ditempatkan di lab dan slot yang tersedia.
+
+---
+
+## Diagram Alur Bulk Import
+
+```mermaid
+flowchart TD
+    subgraph EXCEL["📊 STEP 1: Parse Excel"]
+        E1["Baca semua baris Excel"]
+        E2["Per baris: expand jadi N jadwal\n2 pagi + 1 malam = 3 entry"]
+    end
+
+    subgraph PREPROCESS["⚙️ STEP 2: Preprocessing"]
+        P1["Sort semua jadwal by SKS DESC\n4 SKS → 3 SKS → 2 SKS"]
+    end
+
+    subgraph LOOKUP["🔍 STEP 3: Lookup Data"]
+        L1["Eloquent: Prodi::where code"]
+        L2["Eloquent: Course::where kdmk"]
+    end
+
+    subgraph LABS["🏢 STEP 4: Ambil Lab Priority"]
+        LA1["Eloquent: Laboratorium::active"]
+        LA2["Collection sortBy: isPriorityFor prodi"]
+    end
+
+    subgraph SEARCH["🔄 STEP 5-7: Triple Nested Loop"]
+        direction TB
+        S5["STEP 5: Loop Hari\nSenin → Selasa → ... → Jumat\nbalanced distribution"]
+        S6["STEP 6: Loop Slot Waktu\n07:00, 07:50, ..., 15:30, ...\ncrossesBreak check"]
+        S7["STEP 7: Loop Lab\npriority first → cek availability\nin-memory slot tracking"]
+    end
+
+    subgraph OUTPUT["📤 OUTPUT"]
+        O1["Preview Table\nStatus: OK / Warning / Error"]
+        O2["Simpan ke Database\nsetelah user confirm"]
+    end
+
+    E1 --> E2 --> P1
+    P1 -->|"sorted array"| L1
+    L1 --> L2
+    L2 --> LA1
+    LA1 --> LA2
+    LA2 --> S5
+    S5 --> S6
+    S6 --> S7
+    S7 -->|"found → markSlotUsed"| OUTPUT
+    S7 -->|"not found → next day"| S5
+
+    style EXCEL fill:#e3f2fd,stroke:#1565c0,color:#000
+    style PREPROCESS fill:#fff3e0,stroke:#e65100,color:#000
+    style LOOKUP fill:#fff3e0,stroke:#e65100,color:#000
+    style LABS fill:#fff3e0,stroke:#e65100,color:#000
+    style SEARCH fill:#fce4ec,stroke:#c62828,color:#000
+    style OUTPUT fill:#e8f5e9,stroke:#2e7d32,color:#000
+```
+
+---
+
+## Detail Setiap Tahap
+
+### Step 1: Parse Excel → Expand ke Individual Schedules
+
+**Tujuan:** Satu baris Excel mungkin membutuhkan beberapa kelas. Baris di-expand menjadi individual schedule entries.
+
+```php
+// Per baris Excel: expand menjadi N jadwal
+private function collectScheduleData($row): void
+{
+    $pagiCount = (int) ($row['pagi'] ?? 0);
+    $malamCount = (int) ($row['malam'] ?? 0);
+
+    // Expand: 1 baris → pagiCount + malamCount jadwal
+    for ($i = 1; $i <= $pagiCount; $i++) {
+        $this->pendingSchedules[] = [
+            'sesi' => 'pagi',
+            'kelompok' => "{$kdmk}-" . str_pad($i, 2, '0', STR_PAD_LEFT),
+            // ...
+        ];
+    }
+    for ($i = 1; $i <= $malamCount; $i++) {
+        $this->pendingSchedules[] = [
+            'sesi' => 'malam',
+            'kelompok' => "{$kdmk}-M" . str_pad($i, 2, '0', STR_PAD_LEFT),
+            // ...
+        ];
+    }
+}
+```
+
+**Contoh:**
+
+```
+Baris Excel: Pemrograman Game | 3 SKS | pagi=2, malam=1
+
+Expand menjadi 3 entry:
+  1. {sesi: pagi,  kelompok: A11.64710-01, sks: 3}
+  2. {sesi: pagi,  kelompok: A11.64710-02, sks: 3}
+  3. {sesi: malam, kelompok: A11.64710-M01, sks: 3}
+```
+
+---
+
+### Step 2: Sort by SKS DESC (Heuristic Ordering)
+
+**Tujuan:** Mata kuliah dengan SKS tinggi lebih sulit ditempatkan karena butuh slot berturutan yang panjang. Diproses duluan agar mendapat prioritas.
+
+```php
+// SKS tinggi duluan → constraint propagation heuristic
+usort($this->pendingSchedules, function ($a, $b) {
+    return $b['sks'] <=> $a['sks'];  // DESC
+});
+```
+
+**Contoh:**
+
+```
+Sebelum sort:               Setelah sort:
+  Basis Data (2 SKS)          Pemrograman Game (3 SKS)  ← duluan
+  Pemrograman Game (3 SKS)    Pemrograman Game (3 SKS)
+  Algoritma (2 SKS)           Basis Data (2 SKS)
+  Pemrograman Game (3 SKS)    Algoritma (2 SKS)
+```
+
+> **Alasan:** 3 SKS butuh 3 slot berturutan (150 menit) yang lebih susah ditemukan daripada 2 slot (100 menit). Kalau 2 SKS diproses duluan dan mengambil slot, mungkin tidak tersisa cukup slot berturutan untuk 3 SKS.
+
+---
+
+### Step 3: Lookup Prodi & Course
+
+**Tujuan:** Mapping kode Excel ke entitas database menggunakan Eloquent query.
+
+```php
+// Lookup prodi by code (handle whitespace)
+$prodi = Prodi::whereRaw('TRIM(code) = ?', [$prodiCode])->first();
+
+// Lookup course by KDMK, fallback by nama
+$course = Course::where('code', $kdmk)->first();
+if (!$course && !empty($namaMk)) {
+    $course = Course::whereRaw('LOWER(name) = ?', [strtolower($namaMk)])->first();
+}
+```
+
+**SQL yang dihasilkan:**
+
+```sql
+-- Prodi lookup
+SELECT * FROM prodis WHERE TRIM(code) = 'A11' LIMIT 1;
+
+-- Course lookup (primary)
+SELECT * FROM courses WHERE code = 'A11.64710' LIMIT 1;
+
+-- Course lookup (fallback)
+SELECT * FROM courses WHERE LOWER(name) = 'pemrograman game' LIMIT 1;
+```
+
+---
+
+### Step 4: Ambil Lab + Sort by Priority
+
+**Tujuan:** Mendapatkan semua lab aktif dan mengurutkan berdasarkan prioritas prodi.
+
+```php
+private function getLabsByPriority(?Prodi $prodi): Collection
+{
+    $labs = Laboratorium::active()->get();
+
+    return $labs->sortBy(function ($lab) use ($prodi) {
+        if ($lab->isPriorityFor($prodi->id)) {
+            return 0; // Priority labs first
+        }
+        return 1;
+    });
+}
+```
+
+**Contoh (Prodi: Teknik Informatika):**
+
+```
+Sebelum sort:                       Setelah sort:
+  Lab D3A (non-priority)              Lab D3M (⭐ priority TI)  ← dicoba duluan
+  Lab D3B (non-priority)              Lab D3A
+  Lab D3M (⭐ priority for TI)        Lab D3B
+```
+
+---
+
+### Step 5-7: Triple Nested Loop (Hari × Slot × Lab)
+
+Ini adalah inti dari algoritma penjadwalan bulk. Sistem mencari slot pertama yang tersedia dengan iterasi tiga lapis:
+
+```mermaid
+flowchart TD
+    START["Mulai cari slot untuk 1 jadwal"]
+
+    DAY["STEP 5: Pilih Hari\n─────────────\nDistribusi merata\nhari paling sedikit jadwal duluan"]
+
+    SLOT["STEP 6: Pilih Slot Waktu\n─────────────\n07:00, 07:50, 08:40, ...\n12:30, 13:20, ..., 15:30, ..."]
+
+    BREAK{"crossesBreak?\nSlot→End melewati\njam istirahat?"}
+
+    LAB["STEP 7: Pilih Lab\n─────────────\nPriority lab dicoba duluan"]
+
+    AVAIL{"isSlotAvailable?\nCek DB + in-memory\nslot belum terisi?"}
+
+    FOUND["✅ DITEMUKAN\nmarkSlotUsed in-memory\nreturn assignment"]
+
+    NEXTLAB["Coba lab berikutnya"]
+    NEXTSLOT["Coba slot berikutnya"]
+    NEXTDAY["Coba hari berikutnya"]
+    FAIL["❌ GAGAL\nSemua kombinasi habis"]
+
+    START --> DAY --> SLOT --> BREAK
+    BREAK -->|"Ya → skip"| NEXTSLOT
+    BREAK -->|"Tidak"| LAB --> AVAIL
+    AVAIL -->|"Tidak tersedia"| NEXTLAB
+    AVAIL -->|"Tersedia!"| FOUND
+    NEXTLAB -->|"Masih ada lab?"| LAB
+    NEXTLAB -->|"Lab habis"| NEXTSLOT
+    NEXTSLOT -->|"Masih ada slot?"| SLOT
+    NEXTSLOT -->|"Slot habis"| NEXTDAY
+    NEXTDAY -->|"Masih ada hari?"| DAY
+    NEXTDAY -->|"Hari habis"| FAIL
+
+    style FOUND fill:#c8e6c9,stroke:#2e7d32,color:#000
+    style FAIL fill:#ffcdd2,stroke:#c62828,color:#000
+    style BREAK fill:#fff9c4,stroke:#f57f17,color:#000
+```
+
+#### Step 5: Loop Hari (Day Distribution)
+
+```php
+// Distribusi merata: hari yang paling sedikit jadwal dicoba duluan
+$dayOrder = $this->getDayOrder();  // ['Senin','Selasa','Rabu','Kamis','Jumat']
+
+foreach ($dayOrder as $day) {
+    // ...try slots on this day
+}
+```
+
+#### Step 6: Loop Slot Waktu + Break Check
+
+```php
+foreach ($startTimes as $startTime) {
+    $endTime = $this->calculateEndTime($startTime, $sks * 50);
+
+    // Dynamic break check based on SKS + sesi
+    if ($this->crossesBreak($startTime, $endTime, $sks, $sesi)) {
+        continue;  // Skip — melewati break
+    }
+    // ...try labs for this slot
+}
+```
+
+**Sesai pagi/siang mengiterasi:**
+
+```
+07:00 → 07:50 → 08:40 → 09:30 → 10:20 → 11:10
+12:30 → 13:20 → 14:10 → 15:00 → 15:30
+16:20 → 17:10
+```
+
+#### Step 7: Loop Lab + In-Memory Tracking
+
+```php
+foreach ($labs as $lab) {
+    if ($this->isSlotAvailable($lab->id, $day, $startTime, $endTime, $sks)) {
+        // Mark slot as used IN MEMORY (tidak hit DB lagi)
+        $this->markSlotUsed($lab->id, $day, $startTime, $sks);
+        return $assignment;  // ← DITEMUKAN!
+    }
+}
+```
+
+**In-memory slot tracking** — kunci performa bulk import:
+
+```php
+// Track: "labId_day" => [slot_numbers yang sudah diisi]
+private array $usedSlotNumbers = [];
+
+private function isSlotAvailable(...): bool
+{
+    $key = "{$labId}_{$day}";
+
+    // Inisialisasi dari DB HANYA sekali per lab+day
+    if (!isset($this->usedSlotNumbers[$key])) {
+        $this->usedSlotNumbers[$key] = $this->getOccupiedSlotNumbersFromDB($labId, $day);
+    }
+
+    // Cek in-memory (sangat cepat, O(n))
+    for ($i = 0; $i < $slotsNeeded; $i++) {
+        if (in_array($startSlotNumber + $i, $this->usedSlotNumbers[$key])) {
+            return false;
+        }
+    }
+    return true;
+}
+```
+
+> **Mengapa in-memory?** Jika ada 50 jadwal di Excel dan 10 lab × 5 hari, tanpa in-memory tracking akan ada ~2500 query ke database. Dengan in-memory, hanya ~50 query (sekali per kombinasi lab+day yang unik), sisanya cek di PHP array — **50x lebih cepat**.
+
+---
+
+## Contoh Eksekusi Bulk Import
+
+**Input Excel (3 baris):**
+
+| Prodi | KDMK      | Nama MK          | SKS | Pagi | Malam |
+| ----- | --------- | ---------------- | --- | ---- | ----- |
+| A11   | A11.64710 | Pemrograman Game | 3   | 2    | 0     |
+| A11   | A11.64301 | Basis Data       | 2   | 3    | 1     |
+| A12   | A12.64201 | Algoritma        | 2   | 2    | 0     |
+
+**Proses:**
+
+```
+STEP 1: Parse → 8 individual schedules
+  Game-01 (3 SKS pagi), Game-02 (3 SKS pagi)
+  Basdat-01 (2 SKS pagi), Basdat-02 (2 SKS pagi), Basdat-03 (2 SKS pagi)
+  Basdat-M01 (2 SKS malam)
+  Algo-01 (2 SKS pagi), Algo-02 (2 SKS pagi)
+
+STEP 2: Sort SKS DESC
+  1. Game-01   (3 SKS)  ← diproses duluan
+  2. Game-02   (3 SKS)
+  3. Basdat-01 (2 SKS)
+  4. Basdat-02 (2 SKS)
+  5. Basdat-03 (2 SKS)
+  6. Basdat-M01(2 SKS malam)
+  7. Algo-01   (2 SKS)
+  8. Algo-02   (2 SKS)
+
+STEP 3-7: Per jadwal, cari slot:
+
+  ┌─ Game-01 (3 SKS pagi) ──────────────────────────────────┐
+  │ Lookup: Prodi A11, Course A11.64710                      │
+  │ Labs priority: [D3M⭐, D3A, D3B]                         │
+  │ Try Senin/12:30 → D3M: slot [7,8,9] available → ✅      │
+  │ Result: D3M, Senin, 12:30-15:00                          │
+  │ markSlotUsed: D3M_Senin → [7,8,9]                       │
+  └──────────────────────────────────────────────────────────┘
+
+  ┌─ Game-02 (3 SKS pagi) ──────────────────────────────────┐
+  │ Labs priority: [D3M⭐, D3A, D3B]                         │
+  │ Try Senin/12:30 → D3M: slot 7 occupied (in-memory) → ❌ │
+  │ Try Senin/15:30 → D3M: slot [11,12,13] available → ✅   │
+  │ Result: D3M, Senin, 15:30-18:00                          │
+  │ markSlotUsed: D3M_Senin → [7,8,9,11,12,13]              │
+  └──────────────────────────────────────────────────────────┘
+
+  ┌─ Basdat-01 (2 SKS pagi) ────────────────────────────────┐
+  │ Try Senin/07:00 → D3M: slot [1,2] available → ✅        │
+  │ Result: D3M, Senin, 07:00-08:40                          │
+  └──────────────────────────────────────────────────────────┘
+  ...dst
+```
+
+---
+
+## Perbandingan: Input Satuan vs Bulk Import
+
+| Aspek               | Input Satuan (ScheduleWizard)         | Bulk Import (Excel)                      |
+| ------------------- | ------------------------------------- | ---------------------------------------- |
+| **Input**           | 1 matkul, user pilih dari rekomendasi | N matkul dari Excel, auto-assign         |
+| **Lab filtering**   | Kapasitas + software                  | Hanya lab aktif (semua lab)              |
+| **Slot search**     | Per lab, semua hari sekaligus         | Triple loop: hari → slot → lab           |
+| **Conflict check**  | DB query langsung                     | DB + **in-memory tracking**              |
+| **Break filtering** | Collection `filter()`                 | `crossesBreak()` per-slot                |
+| **Heuristic**       | Priority sort di output               | SKS DESC sort **+ priority lab first**   |
+| **Output**          | Tabel rekomendasi (user pilih)        | Preview table (auto-assign)              |
+| **Teknik CSP**      | Forward Checking                      | Forward Checking + Backtracking implisit |
