@@ -201,6 +201,7 @@ class AdminPanelProvider extends PanelProvider
                         ->url(fn() => '/admin/software')
                         ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.software.*'));
                 }
+            
 
                 // Permissions
                 if ($user->hasRole('super_admin') || $user->can('view-navigation-item', 'role')) {
@@ -208,6 +209,14 @@ class AdminPanelProvider extends PanelProvider
                         ->icon('heroicon-o-shield-check')
                         ->url(fn() => route('filament.admin.resources.shield.roles.index'))
                         ->isActiveWhen(fn() => request()->routeIs('filament.admin.resources.shield.roles.*'));
+                }
+
+                //Rekap Inventaris
+                if ($user->hasRole('super_admin')) {
+                    $masterDataItems[] = NavigationItem::make('Rekap Inventaris')
+                        ->icon('heroicon-o-archive-box')
+                        ->url(\App\Filament\Pages\RekapInventaris::getUrl())
+                        ->isActiveWhen(fn() => request()->routeIs('filament.admin.pages.rekap-inventaris'));
                 }
 
                 // Tambahkan grup MASTER DATA jika ada item di dalamnya
